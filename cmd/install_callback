@@ -3,12 +3,15 @@ set -euo pipefail
 : "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
 : "${TRIM_APPDEST:?TRIM_APPDEST is required}"
 : "${TRIM_APPDEST_VOL:?TRIM_APPDEST_VOL is required}"
-mkdir -p "${TRIM_PKGVAR}/data" "${TRIM_APPDEST}/target" "${TRIM_APPDEST_VOL}/@appshare/fnsdownload/downloads"
+APP_USER="${TRIM_USERNAME:-fnsdownload}"
+APP_GROUP="${TRIM_GROUPNAME:-fnsdownload}"
+mkdir -p "${TRIM_PKGVAR}/data" "${TRIM_APPDEST}" "${TRIM_APPDEST_VOL}/@appshare/fnsdownload/downloads"
 chmod 700 "${TRIM_PKGVAR}/data"
 chmod +x "${TRIM_APPDEST}/server/fnsdownload-amd64"
-# The package-run Go process must be able to create the gateway socket in target/.
-if id fnsdownload >/dev/null 2>&1; then
-  chown fnsdownload:fnsdownload "${TRIM_APPDEST}/target"
-  chmod 700 "${TRIM_APPDEST}/target"
-fi
 test -s "${TRIM_APPDEST}/ui/index.html"
+# TRIM_APPDEST already is the installed target directory. The gateway socket
+# must be created directly here as <TRIM_APPDEST>/app.sock (not target/target).
+# Sticky group-writable directory lets the package user create/remove its socket
+# without granting it permission to replace root-owned application files.
+chown root:"$APP_GROUP" "$TRIM_APPDEST"
+chmod 1775 "$TRIM_APPDEST"
