@@ -30,7 +30,7 @@ func (h *Handler) routes() {
 			"data_dir": filepath.Clean(h.cfg.DataDir),
 		})
 	})
-	h.mux.Handle("/", http.FileServer(http.Dir("public")))
+	h.mux.Handle("/", webHandler())
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
