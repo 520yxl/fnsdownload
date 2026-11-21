@@ -2,13 +2,22 @@
   ".url": {
     "fnsdownload.main": {
       "title": "MoxYi Download",
+      "desc": "飞牛原生迅雷下载器",
       "icon": "images/icon_{0}.png",
       "type": "iframe",
-      "protocol": "",
-      "gatewayPrefix": "/app/fnsdownload",
+      "protocol": "http",
       "gatewaySocket": "app.sock",
+      "gatewayPrefix": "/app/fnsdownload",
       "url": "/app/fnsdownload",
-      "allUsers": false
+      "width": 1280,
+      "height": 820,
+      "allUsers": false,
+      "control": {
+        "accessPerm": "readonly",
+        "fullUrlPerm": "readonly",
+        "portPerm": "readonly",
+        "pathPerm": "readonly"
+      }
     }
   }
 }
