@@ -11,7 +11,7 @@ cd "$ROOT"
 go test ./...
 go vet ./...
 rm -rf "$WORK" "$DIST"
-mkdir -p "$WORK/config" "$WORK/cmd" "$WORK/wizard" "$WORK/i18n" "$WORK/bin" "$WORK/server" "$WORK/ui/assets" "$WORK/ui/images" "$DIST"
+mkdir -p "$WORK/config" "$WORK/cmd" "$WORK/wizard" "$WORK/i18n" "$WORK/app/bin" "$WORK/app/server" "$WORK/app/ui/assets" "$WORK/app/ui/images" "$DIST"
 if [[ -n "$SDK_ROOT" ]]; then
   HEADER="$SDK_ROOT/include/xl_dl/xl_dl_sdk.h"
   LIB="$SDK_ROOT/lib/libdk.so"
@@ -20,19 +20,19 @@ if [[ -n "$SDK_ROOT" ]]; then
   mkdir -p "$ROOT/third_party/xunlei/include" "$ROOT/third_party/xunlei/lib"
   cp -a "$SDK_ROOT/include/." "$ROOT/third_party/xunlei/include/"
   cp -a "$SDK_ROOT/lib/." "$ROOT/third_party/xunlei/lib/"
-  CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -tags xunlei_sdk -ldflags="-s -w" -o "$WORK/server/fnsdownload-amd64" ./cmd/fnsdownload
-  mkdir -p "$WORK/server/lib"
+  CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -tags xunlei_sdk -ldflags="-s -w" -o "$WORK/app/server/fnsdownload-amd64" ./cmd/fnsdownload
+  mkdir -p "$WORK/app/server/lib"
   cp -a "$SDK_ROOT/lib/." "$WORK/server/lib/"
   echo "SDK_BUILD=enabled" > "$DIST/build-info.txt"
 else
-  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$WORK/server/fnsdownload-amd64" ./cmd/fnsdownload
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$WORK/app/server/fnsdownload-amd64" ./cmd/fnsdownload
   echo "SDK_BUILD=stub (official SDK not supplied)" > "$DIST/build-info.txt"
 fi
-ln -s ../server/fnsdownload-amd64 "$WORK/bin/fnsdownload-amd64"
-cp "$ROOT/internal/app/web/index.html" "$WORK/ui/index.html"
-cp -a "$ROOT/internal/app/web/assets/." "$WORK/ui/assets/"
-cp "$ROOT/app/ui/config" "$WORK/ui/config"
-cp -a "$ROOT/app/ui/images/." "$WORK/ui/images/"
+ln -s ../server/fnsdownload-amd64 "$WORK/app/bin/fnsdownload-amd64"
+cp "$ROOT/internal/app/web/index.html" "$WORK/app/ui/index.html"
+cp -a "$ROOT/internal/app/web/assets/." "$WORK/app/ui/assets/"
+cp "$ROOT/app/ui/config" "$WORK/app/ui/config"
+cp -a "$ROOT/app/ui/images/." "$WORK/app/ui/images/"
 cp "$ROOT/manifest" "$WORK/manifest"
 cp -a "$ROOT/config/." "$WORK/config/"
 cp -a "$ROOT/cmd/." "$WORK/cmd/"
@@ -44,7 +44,7 @@ cp "$ROOT/ICON_256.PNG" "$WORK/ICON_256.PNG"
   cd "$WORK"
   fnpack build --directory . --nosign
 )
-FPK="$(find "$ROOT" -type f -name "*.fpk" -size +10000c ! -path "$DIST/*" -print -quit)"
+FPK="$(find "$ROOT" -type f -name "*.fpk" ! -path "$DIST/*" -print -quit)"
 [[ -n "$FPK" ]] || { echo "fnpack did not produce an FPK" >&2; exit 1; }
 cp "$FPK" "$DIST/fnsdownload-x86_64.fpk"
 file "$DIST/fnsdownload-x86_64.fpk"
