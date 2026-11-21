@@ -8,7 +8,7 @@ PID_FILE="$PKGVAR/app.pid"
 LOG_FILE="$PKGVAR/gateway.log"
 DATA_DIR="$PKGVAR/data"
 DOWNLOAD_DIR="$APP_VOL/@appshare/fnsdownload/downloads"
-TARGET_DIR="$APP_DIR/target"
+TARGET_DIR="$APP_DIR"
 SOCKET="$TARGET_DIR/app.sock"
 mkdir -p "$PKGVAR" "$DATA_DIR" "$DOWNLOAD_DIR" "$TARGET_DIR"
 chmod 700 "$DATA_DIR"
@@ -24,6 +24,7 @@ case "${1:-}" in
   [[ -f "$APP_DIR/ui/index.html" ]] || { echo "UI entry missing: $APP_DIR/ui/index.html" >&2; exit 1; }
   rm -f "$SOCKET"
   export DATA_DIR DOWNLOAD_DIR UI_DIR="$APP_DIR/ui" TRIM_APPDEST TRIM_PKGVAR TRIM_APPDEST_VOL HOME="$PKGVAR"
+  echo "Starting MoxYi Download: appdest=$APP_DIR socket=$SOCKET bin=$BIN ui=$APP_DIR/ui" >>"$LOG_FILE"
   nohup "$BIN" >>"$LOG_FILE" 2>&1 </dev/null &
   echo $! >"$PID_FILE"
   for _ in {1..40}; do
