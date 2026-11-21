@@ -11,7 +11,7 @@
     "check": "node --check src/server.js && node --check src/thunder-auth.js && node --check src/thunder-sdk.js"
   },
   "dependencies": {
-    "@xunlei-open/dlsdk": "^1.0.0",
+    "@xunlei-open/dlsdk": "1.0.3",
     "@xunlei-open/dlsdk-native-linux-x64": "^1.0.0"
   }
 }
