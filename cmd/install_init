@@ -1,3 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-exit 0
+fail() {
+  printf '%s\n' "$1" >&2
+  if [[ -n "${TRIM_TEMP_LOGFILE:-}" ]]; then printf '%s\n' "$1" >"$TRIM_TEMP_LOGFILE"; fi
+  exit 1
+}
+[[ "$(uname -m)" == "x86_64" || "$(uname -m)" == "amd64" ]] || fail "Only x86_64 fnOS supported."
+[[ -n "${TRIM_APPDEST:-}" ]] || fail "Missing TRIM_APPDEST"
+[[ -n "${TRIM_PKGVAR:-}" ]] || fail "Missing TRIM_PKGVAR"

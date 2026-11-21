@@ -43,7 +43,7 @@ cp "$ROOT/app/ui/config" "$WORK/app/ui/config"
 cp -a "$ROOT/app/ui/images/." "$WORK/app/ui/images/"
 cp "$ROOT/manifest" "$WORK/manifest"
 cp -a "$ROOT/config/." "$WORK/config/"
-cp -a "$ROOT/cmd/." "$WORK/cmd/"
+for lifecycle in main install_init install_callback upgrade_init upgrade_callback uninstall_init uninstall_callback config_init config_callback; do cp "$ROOT/cmd/$lifecycle" "$WORK/cmd/$lifecycle"; chmod 755 "$WORK/cmd/$lifecycle"; done
 for wizard_file in install upgrade uninstall config; do cp "$ROOT/wizard/$wizard_file" "$WORK/wizard/$wizard_file"; done
 cp -a "$ROOT/i18n/." "$WORK/i18n/"
 cp "$ROOT/ICON.PNG" "$WORK/ICON.PNG"
