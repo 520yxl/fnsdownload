@@ -16,8 +16,8 @@ export async function loginSdk(token,version){
 }
 function getSdk(){if(!initialized||!sdk)throw new Error("thunder_sdk_not_initialized");return sdk;}
 export function createP2spTask(input){const r=getSdk().createP2spTask(input);if(!r||r.result!==0)throw new Error("thunder_sdk_create_task_failed:"+(r?.result??"unknown"));return {taskId:String(r.taskId)};}
-export function startTask(id){const r=getSdk().startTask(id);if(r!==0)throw new Error("thunder_sdk_start_task_failed:"+r);}
-export function stopTask(id){const r=getSdk().stopTask(id);if(r!==0)throw new Error("thunder_sdk_stop_task_failed:"+r);}
-export function deleteTask(id){const r=getSdk().deleteTask(id);if(r!==0)throw new Error("thunder_sdk_delete_task_failed:"+r);}
-export function getTaskState(id){const r=getSdk().getTaskState(id);if(!r||r.result!==0)throw new Error("thunder_sdk_task_state_failed:"+(r?.result??"unknown"));return r.state;}
+export function startTask(id){const r=getSdk().startTask(BigInt(id));if(r!==0)throw new Error("thunder_sdk_start_task_failed:"+r);}
+export function stopTask(id){const r=getSdk().stopTask(BigInt(id));if(r!==0)throw new Error("thunder_sdk_stop_task_failed:"+r);}
+export function deleteTask(id){const r=getSdk().deleteTask(BigInt(id),false);if(r!==0)throw new Error("thunder_sdk_delete_task_failed:"+r);}
+export function getTaskState(id){const r=getSdk().getTaskState(BigInt(id));if(!r||r.result!==0)throw new Error("thunder_sdk_task_state_failed:"+(r?.result??"unknown"));return Object.fromEntries(Object.entries(r.state).map(([k,v])=>[k,typeof v==="bigint"?v.toString():v]));}
 export function uninitializeSdk(){if(initialized&&sdk)sdk.uninit();initialized=false;sdk=undefined;loggedTokenVersion=null;}
