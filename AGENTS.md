@@ -2,42 +2,38 @@
 
 ## Project identity
 - Repository: 520yxl/fnsdownload
-- Product: MoxYi Download for fnOS (飞牛 NAS)
-- Authorization center: https://auth.moxyi.cn (deployment URL is configurable; do not assume this hostname is live)
-- Thunder authorization product: product_id `moxyi-download`
-- Thunder_auth protocol: HMAC-SHA256, shared Login Token, scopes `xtask.p2sp` + `xindex.query`.
-- All application code, packaging, tests and CI belong in this repository. Thunder_auth remains a separate service/repository.
-
-## Confirmed official SDK boundary
-- Official Node.js SDK package: `@xunlei-open/dlsdk`.
-- Official native package for Linux x64: `@xunlei-open/dlsdk-native-linux-x64`.
-- Official Node.js SDK docs currently list Linux x64 but do not list Linux ARM64. Do not claim ARM64 support until the vendor publishes/supports a matching native package and it passes hardware tests.
-- SDK initialization uses `XLDownloadAPI.init({appId, appVersion, configPath, saveTasks})`; login uses `sdk.login(loginToken)`; P2SP task uses `sdk.createP2spTask({url, savePath, saveName})`; start uses `sdk.startTask(taskId)`; release uses `sdk.uninit()`.
-- Never call `sdk.getLoginToken(apiKey)` in production. Login Token must come from Thunder_auth. The official API Key must never be stored on NAS, in this repository, in the image or FPK.
-- Do not invent BT/magnet/ed2k support. Official docs currently state HTTP(S) only.
+- Product: MoxYi Download, a native fnOS desktop FPK application.
+- Supported target: x86_64 / amd64 only. Do not add ARM64 binaries, builds, package targets or compatibility claims.
+- Runtime and deployment: native Go process in fnOS FPK. Docker, Compose and containers are prohibited.
+- Authorization center: Thunder_auth, product_id `moxyi-download`, HMAC-SHA256, shared Login Token, scopes `xtask.p2sp` + `xindex.query`.
 
 ## Architecture
-- Docker-based fnOS FPK, Node.js 22 LTS, Linux x64 first.
-- Node HTTP server (no unnecessary framework), web UI served from `public/`.
-- Persistent data: `/data`; downloads: `/downloads`.
-- SDK config: `/data/sdk`; app config and task metadata in `/data`.
-- Thunder_auth HMAC signer must match `Thunder_auth/docs/API.md` exactly:
-  canonical string: `THUNDER-AUTH-V1\nMETHOD\nPATH\nTIMESTAMP\nNONCE\nBODY_SHA256`, lowercase hex SHA256/HMAC-SHA256, timestamp Unix seconds, nonce base64url.
-- HMAC secret is an application credential and may be extracted by a NAS administrator. Do not describe it as hardware-bound or unextractable.
+- Go backend; Vue 3 static UI embedded with Go embed.
+- fnOS package structure follows the supplied FnDepot FPK reference: manifest, config, cmd, wizard, i18n, ICON.PNG, ICON_256.PNG and app.tgz containing server/ and ui/.
+- FPK contains the amd64 Go executable and required runtime libraries.
+- Native process lifecycle managed by fnOS scripts under cmd/.
+- Persistent configuration, SQLite database, SDK state and logs live under TRIM_PKGVAR.
+- Downloads live under the fnOS app-share directory.
+
+## Xunlei SDK
+- Use the official Linux x64 SDK only.
+- Integrate the vendor-supported C ABI using Go CGO; do not create a separate C++ service.
+- Bundle the required official shared libraries in the FPK and configure a package-relative library search path.
+- Do not claim the SDK is integrated until the official SDK headers and libraries are present and a tagged CGO build succeeds.
+- Never store the official Thunder API Key on the NAS or in this repository.
+- Login Token is issued online by Thunder_auth; never call an SDK API that exchanges a locally stored official API Key for a token.
+- Only claim HTTP(S) downloads unless official SDK documentation and device tests prove additional protocols.
+
+## Thunder_auth
+- Match `520yxl/Thunder_auth/docs/API.md` exactly.
+- Canonical HMAC string: `THUNDER-AUTH-V1\nMETHOD\nPATH\nTIMESTAMP\nNONCE\nBODY_SHA256`.
+- Use lowercase hex SHA256/HMAC-SHA256, Unix-second timestamp and Base64URL nonce.
 - Never log Login Tokens, product secrets, cookies, passwords or signed request headers.
+- Product Secret is an application credential and may be extracted by a NAS administrator; never describe it as hardware-bound.
 
-## Development rules
-- Use ESM and Node built-ins where possible.
-- Keep the SDK behind `src/thunder-sdk.js`; unit tests must run without the proprietary native module.
-- Fail clearly when the SDK native package is missing or architecture is unsupported.
-- Validate download URLs as HTTP(S); reject other protocols.
-- Avoid path traversal: save names must be basenames.
-- Bind web UI to 0.0.0.0 inside the container; expose only the configured fnOS application port.
-- No secrets in Docker build args, image layers, GitHub Actions logs or commits.
-
-## Build and validation
-- `npm test` runs unit tests without native SDK.
-- `docker build` creates the runtime image.
-- FPK packaging uses fnOS `fnpack`; real install/upgrade/stop/uninstall must be validated on a physical fnOS device.
-- CI may build Linux amd64 only until ARM64 SDK support is confirmed.
-- Do not claim real SDK login/download or FPK installation passed unless the workflow/device actually confirms it.
+## Development and release
+- Go tests and vet must run in CI.
+- Build target is Linux amd64 only.
+- Build a native FPK with official fnpack; no Docker pipeline or image.
+- FPK build success does not prove real SDK login or downloads.
+- Validate installation, desktop launch, start/stop/restart, authorization, SDK login, HTTP(S) download, pause/resume/delete, upgrade and uninstall on a physical fnOS x86_64 NAS.
