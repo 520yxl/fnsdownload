@@ -40,6 +40,8 @@ cp -a "$ROOT/wizard/." "$WORK/wizard/"
 cp -a "$ROOT/i18n/." "$WORK/i18n/"
 cp "$ROOT/ICON.PNG" "$WORK/ICON.PNG"
 cp "$ROOT/ICON_256.PNG" "$WORK/ICON_256.PNG"
+# fnOS packages should extract app payload as root:root, not the CI runner UID.
+if [[ "$(id -u)" -eq 0 ]]; then chown -R 0:0 "$WORK"; elif command -v sudo >/dev/null 2>&1; then sudo -n chown -R 0:0 "$WORK"; else echo "Need root ownership for FPK payload; run as root or install sudo." >&2; exit 1; fi
 (
   cd "$WORK"
   fnpack build --directory . --nosign
