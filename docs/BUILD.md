@@ -1,25 +1,32 @@
-# 构建与发布
+# Go 原生 fnOS FPK 构建
 
-## Docker 镜像
+## 依赖
+- Go 1.23+（仅构建机需要）
+- CMake 3.15+、C++11 编译器（用于准备官方 SDK）
+- 飞牛官方 fnpack
+- 迅雷官方 C++ SDK 1.0.3 Linux x64
+
+## 编译 Go 服务
+不链接迅雷 SDK的单元测试构建：
 ```bash
-docker build --platform linux/amd64 -t ghcr.io/520yxl/fnsdownload:dev .
+go test ./...
+go build -o build/fnsdownload ./cmd/fnsdownload
 ```
-GitHub Actions 在 develop/main 分支通过 Node 测试后自动构建 Linux amd64 镜像并推送 GHCR。
 
-## fnOS FPK
-本仓库使用飞牛 Docker 应用结构：manifest、cmd、config、wizard、app/docker 和 app/ui。
-本地使用飞牛官方 fnpack 1.3.3：
+正式包需要将官方 SDK 安装到 `third_party/xunlei`，确保头文件位于 `include/xl_dl/xl_dl_sdk.h`，动态库位于 `lib/libdk.so`，再执行：
 ```bash
-fnpack build
+CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -tags xunlei_sdk -o app/bin/fnsdownload ./cmd/fnsdownload
 ```
-需要导入开发者证书才能生成签名包。GitHub Actions 使用 `fnpack build --nosign` 生成未签名开发测试包，并作为 Workflow Artifact 保存 14 天。该包仅供本地调试，不等同于可正式分发的签名包。
 
-## 数据路径
-- 配置和 SDK 状态：${TRIM_PKGVAR}/data -> /data
-- 下载文件：${TRIM_APPDEST_VOL}/@appshare/fnsdownload/downloads -> /downloads
-- Web 端口：${wizard_port} -> 8088
+## FPK 目录
+- `app/bin/fnsdownload`：Go 原生可执行文件
+- `app/lib/libdk.so`：迅雷官方 SDK 动态库
+- `app/ui/`：桌面 iframe 配置和图标
+- `cmd/`：fnOS 生命周期脚本
+- `config/`：权限和共享目录声明
+- `wizard/`：安装/配置向导
+
+使用官方 fnpack 在项目根目录构建。FPK 不包含 Docker 配置，不依赖 NAS 安装 Go 或 Node.js。
 
 ## 设备验收
-先安装未签名开发包验证 FPK 结构；正式签名安装需要导入有效开发者证书。
-随后验证首次初始化、设备注册、Token 获取、SDK 登录、HTTP/HTTPS 测试下载、暂停/继续/删除、应用重启恢复、升级和卸载。
-没有通过真实 fnOS x86_64 设备的原生库加载和下载测试，不得标记为正式可用。
+安装包必须在真实 fnOS x86_64 NAS 验证。仅完成 Go 编译或 fnpack 打包不能视为 SDK 下载验收通过。
