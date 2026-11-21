@@ -19,6 +19,9 @@ ARCH="${TRIM_SYS_ARCH:-$(uname -m)}"
 
 mkdir -p "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"
 chmod 700 "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"
+if [[ "$(id -u)" -eq 0 ]]; then
+  chown -R "$TRIM_USERNAME:$TRIM_GROUPNAME" "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"
+fi
 
 # TRIM_APPDEST is the installed target directory. The unified gateway socket
 # must be created directly inside this directory as app.sock.
