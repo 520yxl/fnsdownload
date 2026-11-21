@@ -1,3 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+: "${TRIM_APPDEST:?TRIM_APPDEST is required}"
+: "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
+"$SCRIPT_DIR/main" stop
 exit 0
