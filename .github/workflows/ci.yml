@@ -60,10 +60,10 @@ jobs:
           fnpack --help
           fnpack build --help
       - name: Build fnOS FPK
-        run: fnpack build --directory .
+        run: fnpack build --directory . --nosign
       - uses: actions/upload-artifact@v4
         with:
-          name: fnsdownload-fpk-${{ github.sha }}
+          name: fnsdownload-fpk-unsigned-${{ github.sha }}
           path: "*.fpk"
           if-no-files-found: error
           retention-days: 14
