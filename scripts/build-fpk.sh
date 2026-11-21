@@ -35,7 +35,7 @@ PY
 go test ./...
 go vet ./...
 rm -rf "$WORK" "$DIST"
-mkdir -p "$WORK/config" "$WORK/cmd" "$WORK/wizard" "$WORK/i18n" "$WORK/app/bin" "$WORK/app/server" "$WORK/app/ui/assets" "$WORK/app/ui/images" "$DIST"
+mkdir -p "$WORK/config" "$WORK/cmd" "$WORK/wizard" "$WORK/i18n" "$WORK/app/server" "$WORK/app/ui/assets" "$WORK/app/ui/images" "$DIST"
 if [[ -n "$SDK_ROOT" ]]; then
   HEADER="$SDK_ROOT/include/xl_dl/xl_dl_sdk.h"
   LIB="$SDK_ROOT/lib/libdk.so"
@@ -52,7 +52,6 @@ else
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$WORK/app/server/fnsdownload-amd64" ./cmd/fnsdownload
   echo "SDK_BUILD=stub (official SDK not supplied)" > "$DIST/build-info.txt"
 fi
-ln -s ../server/fnsdownload-amd64 "$WORK/app/bin/fnsdownload-amd64"
 cp "$ROOT/internal/app/web/index.html" "$WORK/app/ui/index.html"
 cp -a "$ROOT/internal/app/web/assets/." "$WORK/app/ui/assets/"
 cp "$ROOT/app/ui/config" "$WORK/app/ui/config"
@@ -60,6 +59,7 @@ cp -a "$ROOT/app/ui/images/." "$WORK/app/ui/images/"
 cp "$ROOT/manifest" "$WORK/manifest"
 cp -a "$ROOT/config/." "$WORK/config/"
 cp -a "$ROOT/cmd/." "$WORK/cmd/"
+rm -rf "$WORK/cmd/fnsdownload"
 cp -a "$ROOT/wizard/." "$WORK/wizard/"
 cp -a "$ROOT/i18n/." "$WORK/i18n/"
 cp "$ROOT/ICON.PNG" "$WORK/ICON.PNG"
