@@ -8,7 +8,7 @@ fail() {
 : "${TRIM_APPDEST:?TRIM_APPDEST is required}"
 : "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
 : "${TRIM_GROUPNAME:?TRIM_GROUPNAME is required}"
-ARCH="${TRIM_SYS_ARCH:-$(uname -m)}"
+ARCH="$(uname -m)"
 [[ "$ARCH" == "x86_64" || "$ARCH" == "amd64" ]] || fail "MoxYi Download only supports x86_64 fnOS."
 [[ -x "$TRIM_APPDEST/server/fnsdownload-amd64" ]] || fail "Upgrade package is missing the Go service binary."
 [[ -s "$TRIM_APPDEST/ui/index.html" ]] || fail "Upgrade package is missing the desktop Web UI."
