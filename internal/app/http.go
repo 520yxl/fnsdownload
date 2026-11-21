@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Handler struct {
@@ -17,12 +18,14 @@ func NewHandler(cfg Config) http.Handler {
 	_ = os.MkdirAll(cfg.DownloadDir, 0750)
 	h := &Handler{cfg: cfg, mux: http.NewServeMux()}
 	h.routes()
-	return h.mux
+	prefix := strings.TrimRight(cfg.GatewayPrefix, "/")
+	if prefix == "" { return h.mux }
+	return http.StripPrefix(prefix, h.mux)
 }
 
 func (h *Handler) routes() {
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.2.0", "runtime": "go"})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.2.1", "runtime": "go"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
