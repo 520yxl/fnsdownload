@@ -44,7 +44,11 @@ cp "$ROOT/ICON_256.PNG" "$WORK/ICON_256.PNG"
 if [[ "$(id -u)" -eq 0 ]]; then chown -R 0:0 "$WORK/app" "$WORK/config" "$WORK/cmd" "$WORK/wizard" "$WORK/i18n" "$WORK/manifest" "$WORK/ICON.PNG" "$WORK/ICON_256.PNG"; elif command -v sudo >/dev/null 2>&1; then sudo -n chown -R 0:0 "$WORK/app" "$WORK/config" "$WORK/cmd" "$WORK/wizard" "$WORK/i18n" "$WORK/manifest" "$WORK/ICON.PNG" "$WORK/ICON_256.PNG"; else echo "Need root ownership for FPK payload; run as root or install sudo." >&2; exit 1; fi
 (
   cd "$WORK"
-  sudo -n fnpack build --directory . --nosign
+  if [[ "$(id -u)" -eq 0 ]]; then
+    fnpack build --directory . --nosign
+  else
+    sudo -n fnpack build --directory . --nosign
+  fi
 )
 FPK="$(find "$WORK" -type f -name "*.fpk" -print -quit)"
 if [[ -z "$FPK" ]]; then FPK="$(find "$ROOT" -maxdepth 1 -type f -name "*.fpk" -print -quit)"; fi
