@@ -3,15 +3,15 @@ set -euo pipefail
 APP_DIR="${TRIM_APPDEST:?TRIM_APPDEST is required}"
 PKGVAR="${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
 APP_VOL="${TRIM_APPDEST_VOL:?TRIM_APPDEST_VOL is required}"
-BIN="$APP_DIR/bin/fnsdownload"
-PID_FILE="$PKGVAR/run/fnsdownload.pid"
-LOG_FILE="$PKGVAR/log/app.log"
+BIN="$APP_DIR/server/fnsdownload-amd64"
+PID_FILE="$PKGVAR/app.pid"
+LOG_FILE="$PKGVAR/gateway.log"
 DATA_DIR="$PKGVAR/data"
 DOWNLOAD_DIR="$APP_VOL/@appshare/fnsdownload/downloads"
 TARGET_DIR="$APP_DIR/target"
 SOCKET="$TARGET_DIR/app.sock"
-mkdir -p "$PKGVAR/run" "$PKGVAR/log" "$DATA_DIR" "$DOWNLOAD_DIR" "$TARGET_DIR"
-chmod 700 "$PKGVAR/run" "$DATA_DIR"
+mkdir -p "$PKGVAR" "$DATA_DIR" "$DOWNLOAD_DIR" "$TARGET_DIR"
+chmod 700 "$DATA_DIR"
 is_running() {
   [[ -s "$PID_FILE" ]] || return 1
   local pid; pid="$(cat "$PID_FILE")"
@@ -19,18 +19,21 @@ is_running() {
 }
 case "${1:-}" in
  start)
-  is_running && exit 0
+  is_running && [[ -S "$SOCKET" ]] && exit 0
   [[ -x "$BIN" ]] || { echo "Go binary missing: $BIN" >&2; exit 1; }
+  [[ -f "$APP_DIR/ui/index.html" ]] || { echo "UI entry missing: $APP_DIR/ui/index.html" >&2; exit 1; }
   rm -f "$SOCKET"
-  export DATA_DIR DOWNLOAD_DIR TRIM_APPDEST TRIM_PKGVAR TRIM_APPDEST_VOL HOME="$PKGVAR"
+  export DATA_DIR DOWNLOAD_DIR UI_DIR="$APP_DIR/ui" TRIM_APPDEST TRIM_PKGVAR TRIM_APPDEST_VOL HOME="$PKGVAR"
   nohup "$BIN" >>"$LOG_FILE" 2>&1 </dev/null &
   echo $! >"$PID_FILE"
-  for _ in {1..30}; do
-    if is_running && [[ -S "$SOCKET" ]]; then exit 0; fi
+  for _ in {1..40}; do
+    if is_running && [[ -S "$SOCKET" ]]; then
+      if command -v curl >/dev/null 2>&1 && curl --silent --fail --max-time 2 --unix-socket "$SOCKET" "http://localhost/app/fnsdownload/api/health" | grep -q '"ok":true'; then exit 0; fi
+    fi
     sleep 0.5
   done
   rm -f "$PID_FILE"
-  echo "service failed to create $SOCKET; inspect $LOG_FILE" >&2
+  echo "service failed health check; inspect $LOG_FILE" >&2
   exit 1
   ;;
  stop)
