@@ -86,10 +86,10 @@ from pathlib import Path
 import re, sys
 p = Path(sys.argv[1])
 s = p.read_text()
-if re.search(r"(?m)^checksum\\s*=", s):
-    s = re.sub(r"(?m)^checksum\\s*=.*$", "checksum=" + sys.argv[2], s)
+if re.search(r"(?m)^checksum\s*=", s):
+    s = re.sub(r"(?m)^checksum\s*=.*$", "checksum=" + sys.argv[2], s)
 else:
-    s = s.rstrip() + "\\nchecksum=" + sys.argv[2] + "\\n"
+    s = s.rstrip() + "\nchecksum=" + sys.argv[2] + "\n"
 p.write_text(s)
 PY
 rm -rf "$WORK/app"
