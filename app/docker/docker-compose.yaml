@@ -1,6 +1,6 @@
 services:
   fnsdownload:
-    image: ghcr.io/520yxl/fnsdownload:latest
+    image: ghcr.io/520yxl/fnsdownload:develop
     container_name: fnsdownload
     restart: unless-stopped
     ports:
