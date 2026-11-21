@@ -1,11 +1,11 @@
 appname               = fnsdownload
-version               = 0.1.0
+version               = 0.2.0
 display_name          = MoxYi Download
-desc                  = 迅雷 SDK 驱动的飞牛 NAS 下载器
+desc                  = Go + 迅雷官方 SDK 的飞牛原生下载器
 source                = thirdparty
 platform              = x86
 maintainer            = MoxYi
-distributor           = MoxYi
+distributor            = MoxYi
 desktop_uidir         = ui
 desktop_applaunchname = fnsdownload.main
 service_port          = 8088
