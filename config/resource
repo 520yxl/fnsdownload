@@ -1,7 +1,9 @@
 {
   "data-share": {
     "shares": [
-      { "name": "fnsdownload" }
+      {
+        "name": "fnsdownload/downloads"
+      }
     ]
   }
 }
