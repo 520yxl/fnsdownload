@@ -4,7 +4,7 @@ services:
     container_name: fnsdownload
     restart: unless-stopped
     ports:
-      - "8088:8088"
+      - "${TRIM_SERVICE_PORT}:8088"
     environment:
       NODE_ENV: production
       PORT: "8088"
@@ -12,7 +12,6 @@ services:
       DOWNLOAD_DIR: /downloads
       APP_TIMEZONE: Asia/Shanghai
     volumes:
-      - ${TRIM_APPDEST}/data:/data
-      - ${TRIM_DOWNLOAD_PATH}:/downloads
-    # The official Node.js native SDK currently supports Linux x64 only.
+      - ${TRIM_PKGVAR}/data:/data
+      - ${TRIM_APPDEST_VOL}/@appshare/fnsdownload/downloads:/downloads
     platform: linux/amd64
