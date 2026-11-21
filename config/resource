@@ -1,5 +1,9 @@
 {
   "docker": true,
   "network": true,
-  "data_share": true
+  "data-share": {
+    "shares": [
+      { "name": "fnsdownload" }
+    ]
+  }
 }
