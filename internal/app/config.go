@@ -8,6 +8,7 @@ import (
 type Config struct {
 	SocketPath string
 	DataDir string
+	DatabasePath string
 	DownloadDir string
 	UIPath string
 	GatewayPrefix string
@@ -22,6 +23,7 @@ func ConfigFromEnv() Config {
 	return Config{
 		SocketPath: filepath.Join(appDest, "app.sock"),
 		DataDir: data,
+		DatabasePath: filepath.Join(data, "tasks.db"),
 		DownloadDir: downloads,
 		UIPath: env("UI_DIR", filepath.Join(appDest, "ui")),
 		GatewayPrefix: "/app/fnsdownload",

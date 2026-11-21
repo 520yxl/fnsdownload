@@ -16,6 +16,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Resolve Go modules
+        run: go mod tidy
       - name: Build Vue 3 frontend
         working-directory: frontend
         run: |
