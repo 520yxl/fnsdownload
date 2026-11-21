@@ -1,3 +1,7 @@
 {
-  "run-as": "root"
+  "defaults": {
+    "run-as": "package"
+  },
+  "username": "fnsdownload",
+  "groupname": "fnsdownload"
 }
