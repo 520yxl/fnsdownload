@@ -9,6 +9,9 @@ command -v go >/dev/null 2>&1 || { echo "Go is required on the build host" >&2; 
 command -v fnpack >/dev/null 2>&1 || { echo "Official fnpack is required on the build host" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || { echo "jq is required to validate wizard JSON" >&2; exit 1; }
 cd "$ROOT"
+launch_name="$(sed -n 's/^desktop_applaunchname=//p' manifest | tr -d '\r')"
+[[ -n "$launch_name" ]] || { echo "Missing desktop_applaunchname in manifest" >&2; exit 1; }
+jq -e --arg name "$launch_name" 'has(".url") and (.".url" | has($name))' app/ui/config >/dev/null || { echo "Desktop launcher mismatch: manifest=$launch_name" >&2; exit 1; }
 go test ./...
 go vet ./...
 for wizard_file in install upgrade uninstall config; do
@@ -60,7 +63,7 @@ APP_TGZ_ENTRY="$(awk '$0 ~ /app[.]tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
 [[ -n "$APP_TGZ_ENTRY" ]] || { echo "FPK is missing app.tgz"; cat "$DIST/fpk-files.txt"; exit 1; }
 tar -xOf "$DIST/fnsdownload-x86_64.fpk" "$APP_TGZ_ENTRY" | tar -tzf - > "$DIST/app-files.txt"
 for required in "ui/index.html" "ui/config" "server/fnsdownload-amd64" "ui/assets/app.css" "ui/assets/app.js" "ui/images/icon_0.png" "ui/images/icon_1.png"; do grep -Fxq "$required" "$DIST/app-files.txt" || { echo "Missing package entry: $required"; cat "$DIST/app-files.txt"; exit 1; }; done
-for required in "install" "upgrade" "uninstall" "config"; do grep -Fxq "wizard/$required" "$DIST/app-files.txt" || { echo "Missing package entry: wizard/$required"; cat "$DIST/app-files.txt"; exit 1; }; done
+for required in "install" "upgrade" "uninstall" "config"; do grep -Eq "(^|\\./)wizard/$required$" "$DIST/fpk-files.txt" || { echo "Missing outer FPK entry: wizard/$required"; cat "$DIST/fpk-files.txt"; exit 1; }; done
 if grep -Eq '(^|/)bin/' "$DIST/app-files.txt"; then echo "Unexpected app/bin directory in app.tgz"; cat "$DIST/app-files.txt"; exit 1; fi
 echo "FPK created: $DIST/fnsdownload-x86_64.fpk"
 echo "Build details: $DIST/build-info.txt"
