@@ -5,4 +5,8 @@ set -euo pipefail
 mkdir -p "${TRIM_PKGVAR}/data" "${TRIM_APPDEST}/target"
 chmod 700 "${TRIM_PKGVAR}/data"
 chmod +x "${TRIM_APPDEST}/server/fnsdownload-amd64"
+if id fnsdownload >/dev/null 2>&1; then
+  chown fnsdownload:fnsdownload "${TRIM_APPDEST}/target"
+  chmod 700 "${TRIM_APPDEST}/target"
+fi
 test -s "${TRIM_APPDEST}/ui/index.html"
