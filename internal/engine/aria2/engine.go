@@ -32,7 +32,11 @@ func(e *Engine)Create(ctx context.Context,req engine.CreateRequest)(engine.Task,
 	var gid string;if err:=e.call(ctx,"aria2.addUri",[]any{[]string{req.URL},options},&gid);err!=nil{return engine.Task{},err}
 	now:=time.Now().UTC();return engine.Task{ID:gid,Engine:e.Name(),Source:req.URL,Name:req.Name,Directory:req.Directory,Status:engine.StatusQueued,CreatedAt:now,UpdatedAt:now},nil
 }
-func(e *Engine)Start(ctx context.Context,id string)error{return e.call(ctx,"aria2.unpause",[]any{id},nil)}
+func(e *Engine)Start(ctx context.Context,id string)error{
+	task,err:=e.Get(ctx,id);if err!=nil{return err}
+	if task.Status!=engine.StatusPaused{return nil}
+	return e.call(ctx,"aria2.unpause",[]any{id},nil)
+}
 func(e *Engine)Pause(ctx context.Context,id string)error{return e.call(ctx,"aria2.pause",[]any{id},nil)}
 func(e *Engine)Resume(ctx context.Context,id string)error{return e.Start(ctx,id)}
 func(e *Engine)Delete(ctx context.Context,id string,deleteFile bool)error{if err:=e.call(ctx,"aria2.remove",[]any{id},nil);err!=nil{return err};if deleteFile{return e.call(ctx,"aria2.removeDownloadResult",[]any{id},nil)};return nil}
@@ -40,13 +44,17 @@ func(e *Engine)Get(ctx context.Context,id string)(engine.Task,error){
 	var r struct{GID string `json:"gid"`;Status string `json:"status"`;Total string `json:"totalLength"`;Done string `json:"completedLength"`;Speed string `json:"downloadSpeed"`;Files []struct{Path string `json:"path"`} `json:"files"`}
 	if err:=e.call(ctx,"aria2.tellStatus",[]any{id,[]string{"status","totalLength","completedLength","downloadSpeed","files"}},&r);err!=nil{return engine.Task{},err}
 	t:=engine.Task{ID:r.GID,Engine:e.Name(),TotalBytes:parse(r.Total),CompletedBytes:parse(r.Done),SpeedBytes:parse(r.Speed),UpdatedAt:time.Now().UTC()}
-	switch r.Status{case "active":t.Status=engine.StatusRunning;case "paused":t.Status=engine.StatusPaused;case "complete":t.Status=engine.StatusCompleted;case "error":t.Status=engine.StatusFailed;default:t.Status=engine.StatusQueued}
+	switch r.Status{case "active":t.Status=engine.StatusRunning;case "paused":t.Status=engine.StatusPaused;case "complete":t.Status=engine.StatusCompleted;case "error":t.Status=engine.StatusFailed;case "removed":t.Status=engine.StatusRemoved;default:t.Status=engine.StatusQueued}
 	if len(r.Files)>0{t.Name=r.Files[0].Path};return t,nil
 }
 func(e *Engine)List(ctx context.Context)([]engine.Task,error){
-	var rows []struct{GID string `json:"gid"`}
-	if err:=e.call(ctx,"aria2.tellActive",[]any{[]string{"gid"}},&rows);err!=nil{return nil,err}
-	out:=make([]engine.Task,0,len(rows));for _,row:=range rows{t,err:=e.Get(ctx,row.GID);if err==nil{out=append(out,t)}};return out,nil
+	type row struct{GID string `json:"gid"`}
+	seen:=map[string]bool{};gids:=make([]string,0)
+	for _,query:=range []struct{method string;params []any}{{"aria2.tellActive",[]any{[]string{"gid"}}},{"aria2.tellWaiting",[]any{0,1000,[]string{"gid"}}},{"aria2.tellStopped",[]any{0,1000,[]string{"gid"}}}}{
+		var rows []row;if err:=e.call(ctx,query.method,query.params,&rows);err!=nil{return nil,err}
+		for _,item:=range rows{if item.GID!=""&&!seen[item.GID]{seen[item.GID]=true;gids=append(gids,item.GID)}}
+	}
+	out:=make([]engine.Task,0,len(gids));for _,gid:=range gids{t,err:=e.Get(ctx,gid);if err==nil{out=append(out,t)}};return out,nil
 }
 func(e *Engine)Close()error{return nil}
 func parse(s string)int64{var n int64;_,_=fmt.Sscan(s,&n);return n}
