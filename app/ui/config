@@ -1,11 +1,11 @@
 {
   ".url": {
-    "fnsdownload.main": {
+    "fnsdownload.Application": {
       "title": "MoxYi Download",
-      "desc": "飞牛原生迅雷下载器",
+      "desc": "飞牛 NAS 多引擎下载器",
       "icon": "images/icon_{0}.png",
       "type": "iframe",
-      "protocol": "http",
+      "protocol": "",
       "gatewaySocket": "app.sock",
       "gatewayPrefix": "/app/fnsdownload",
       "url": "/app/fnsdownload",
