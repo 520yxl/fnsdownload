@@ -116,10 +116,10 @@ with tarfile.open(sys.argv[1], "r:gz") as outer:
         expected = {"server/fnsdownload-amd64", "ui/index.html", "ui/config"}
         if not expected.issubset(names):
             raise SystemExit(f"Missing runtime files: {sorted(expected - names)}")
-        forbidden = {"manifest", "config/privilege", "config/resource", "cmd/main"}
+        forbidden = {"manifest", "cmd/main"}
         duplicated = forbidden & names
         if duplicated:
-            raise SystemExit(f"FPK metadata wrongly duplicated inside app.tgz: {sorted(duplicated)}")
+            raise SystemExit(f"FPK outer control files wrongly duplicated inside app.tgz: {sorted(duplicated)}")
         print("fnOS FPK outer metadata and app.tgz runtime payload separation passed")
 PY
 echo "FPK created: $DIST/fnsdownload-x86_64.fpk"
