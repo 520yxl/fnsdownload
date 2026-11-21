@@ -8,7 +8,7 @@ PID_FILE="$PKGVAR/run/fnsdownload.pid"
 LOG_FILE="$PKGVAR/log/app.log"
 DATA_DIR="$PKGVAR/data"
 DOWNLOAD_DIR="$APP_VOL/@appshare/fnsdownload/downloads"
-PORT="${wizard_port:-8088}"
+SOCKET="$APP_DIR/app.sock"
 mkdir -p "$PKGVAR/run" "$PKGVAR/log" "$DATA_DIR" "$DOWNLOAD_DIR"
 chmod 700 "$PKGVAR/run" "$DATA_DIR"
 is_running() {
@@ -20,11 +20,17 @@ case "${1:-}" in
  start)
   is_running && exit 0
   [[ -x "$BIN" ]] || { echo "Go binary missing: $BIN" >&2; exit 1; }
-  export PORT DATA_DIR DOWNLOAD_DIR HOME="$PKGVAR"
+  rm -f "$SOCKET"
+  export DATA_DIR DOWNLOAD_DIR TRIM_APPDEST TRIM_PKGVAR TRIM_APPDEST_VOL HOME="$PKGVAR"
   nohup "$BIN" >>"$LOG_FILE" 2>&1 </dev/null &
   echo $! >"$PID_FILE"
-  sleep 1
-  is_running || { rm -f "$PID_FILE"; echo "service failed; inspect $LOG_FILE" >&2; exit 1; }
+  for _ in {1..20}; do
+    if is_running && [[ -S "$SOCKET" ]]; then exit 0; fi
+    sleep 0.5
+  done
+  rm -f "$PID_FILE"
+  echo "service failed to create gateway socket; inspect $LOG_FILE" >&2
+  exit 1
   ;;
  stop)
   if is_running; then
@@ -32,8 +38,8 @@ case "${1:-}" in
    for _ in {1..20}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
    kill -9 "$pid" 2>/dev/null || true
   fi
-  rm -f "$PID_FILE"
+  rm -f "$PID_FILE" "$SOCKET"
   ;;
- status) is_running && exit 0; exit 3 ;;
+ status) is_running && [[ -S "$SOCKET" ]] && exit 0; exit 3 ;;
  *) echo "usage: $0 {start|stop|status}" >&2; exit 2 ;;
 esac
