@@ -44,7 +44,7 @@ cp "$ROOT/ICON_256.PNG" "$WORK/ICON_256.PNG"
   cd "$WORK"
   fnpack build --directory . --nosign
 )
-FPK="$(find "$WORK" -maxdepth 2 -type f -name "*.fpk" -size +10k -print -quit)"
+FPK="$(find "$WORK" -maxdepth 2 -type f -name "*.fpk" -size +10000c -print -quit)"
 [[ -n "$FPK" ]] || { echo "fnpack did not produce an FPK" >&2; exit 1; }
 cp "$FPK" "$DIST/fnsdownload-x86_64.fpk"
 tar -tzf "$DIST/fnsdownload-x86_64.fpk" > "$DIST/fpk-files.txt"
