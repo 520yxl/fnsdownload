@@ -2,25 +2,55 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DIST="$ROOT/dist"
+WORK="$ROOT/.fpk-work"
 SDK_ROOT="${XUNLEI_SDK_ROOT:-}"
-: "${SDK_ROOT:?Set XUNLEI_SDK_ROOT to the installed official Xunlei C++ SDK prefix}"
-
-HEADER="$SDK_ROOT/include/xl_dl/xl_dl_sdk.h"
-LIB="$SDK_ROOT/lib/libdk.so"
-[[ -f "$HEADER" ]] || { echo "Missing SDK header: $HEADER" >&2; exit 1; }
-[[ -f "$LIB" ]] || { echo "Missing SDK library: $LIB" >&2; exit 1; }
-
-mkdir -p "$ROOT/third_party/xunlei/include" "$ROOT/third_party/xunlei/lib" "$ROOT/app/bin" "$ROOT/app/lib"
-cp -a "$SDK_ROOT/include/." "$ROOT/third_party/xunlei/include/"
-cp -a "$SDK_ROOT/lib/." "$ROOT/third_party/xunlei/lib/"
-cp "$LIB" "$ROOT/app/lib/libdk.so"
-
+command -v go >/dev/null 2>&1 || { echo "Go is required on the build host" >&2; exit 1; }
+command -v fnpack >/dev/null 2>&1 || { echo "Official fnpack is required on the build host" >&2; exit 1; }
 cd "$ROOT"
-CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -tags xunlei_sdk -ldflags="-s -w" -o app/bin/fnsdownload ./cmd/fnsdownload
-
-if command -v fnpack >/dev/null 2>&1; then
-  fnpack build --directory . --nosign
+go test ./...
+go vet ./...
+rm -rf "$WORK" "$DIST"
+mkdir -p "$WORK/config" "$WORK/cmd" "$WORK/wizard" "$WORK/i18n" "$WORK/payload/server" "$WORK/payload/ui/assets" "$WORK/payload/ui/images" "$DIST"
+if [[ -n "$SDK_ROOT" ]]; then
+  HEADER="$SDK_ROOT/include/xl_dl/xl_dl_sdk.h"
+  LIB="$SDK_ROOT/lib/libdk.so"
+  [[ -s "$HEADER" ]] || { echo "Missing official SDK header: $HEADER" >&2; exit 1; }
+  [[ -s "$LIB" ]] || { echo "Missing official SDK library: $LIB" >&2; exit 1; }
+  mkdir -p "$ROOT/third_party/xunlei/include" "$ROOT/third_party/xunlei/lib"
+  cp -a "$SDK_ROOT/include/." "$ROOT/third_party/xunlei/include/"
+  cp -a "$SDK_ROOT/lib/." "$ROOT/third_party/xunlei/lib/"
+  CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -tags xunlei_sdk -ldflags="-s -w" -o "$WORK/payload/server/fnsdownload-amd64" ./cmd/fnsdownload
+  cp -a "$SDK_ROOT/lib/." "$WORK/payload/server/"
+  echo "SDK_BUILD=enabled" > "$DIST/build-info.txt"
 else
-  echo "fnpack not found. Go binary and SDK are staged under app/; install official fnpack to package FPK." >&2
-  exit 2
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$WORK/payload/server/fnsdownload-amd64" ./cmd/fnsdownload
+  echo "SDK_BUILD=stub (official SDK not supplied)" > "$DIST/build-info.txt"
 fi
+cp "$ROOT/internal/app/web/index.html" "$WORK/payload/ui/index.html"
+cp -a "$ROOT/internal/app/web/assets/." "$WORK/payload/ui/assets/"
+cp "$ROOT/app/ui/config" "$WORK/payload/ui/config"
+cp -a "$ROOT/app/ui/images/." "$WORK/payload/ui/images/"
+tar -czf "$WORK/app.tgz" -C "$WORK/payload" server ui
+tar -tzf "$WORK/app.tgz" | grep -qx "ui/index.html"
+tar -tzf "$WORK/app.tgz" | grep -qx "server/fnsdownload-amd64"
+cp "$ROOT/manifest" "$WORK/manifest"
+cp -a "$ROOT/config/." "$WORK/config/"
+cp -a "$ROOT/cmd/." "$WORK/cmd/"
+cp -a "$ROOT/wizard/." "$WORK/wizard/"
+if [[ -d "$ROOT/i18n" ]]; then cp -a "$ROOT/i18n/." "$WORK/i18n/"; fi
+cp "$ROOT/ICON.PNG" "$WORK/ICON.PNG"
+cp "$ROOT/ICON_256.PNG" "$WORK/ICON_256.PNG"
+(
+  cd "$WORK"
+  fnpack build --directory . --nosign
+)
+FPK="$(find "$WORK" -maxdepth 2 -type f -name "*.fpk" -size +10k -print -quit)"
+[[ -n "$FPK" ]] || { echo "fnpack did not produce an FPK" >&2; exit 1; }
+cp "$FPK" "$DIST/fnsdownload-x86_64.fpk"
+tar -tzf "$DIST/fnsdownload-x86_64.fpk" > "$DIST/fpk-files.txt"
+grep -qx "app.tgz" "$DIST/fpk-files.txt"
+tar -xOf "$DIST/fnsdownload-x86_64.fpk" app.tgz | tar -tzf - > "$DIST/app-files.txt"
+for required in "ui/index.html" "ui/config" "server/fnsdownload-amd64" "ui/assets/app.css" "ui/assets/app.js" "ui/images/icon_0.png" "ui/images/icon_1.png"; do grep -qx "$required" "$DIST/app-files.txt" || { echo "Missing package entry: $required" >&2; exit 1; }; done
+echo "FPK created: $DIST/fnsdownload-x86_64.fpk"
+echo "Build details: $DIST/build-info.txt"
