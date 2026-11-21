@@ -18,7 +18,7 @@ func ConfigFromEnv() Config {
 	data := env("DATA_DIR", filepath.Join(env("TRIM_PKGVAR", "."), "data"))
 	downloads := env("DOWNLOAD_DIR", filepath.Join(env("TRIM_APPDEST_VOL", "."), "@appshare", "fnsdownload", "downloads"))
 	return Config{
-		SocketPath: filepath.Join(appDest, "target", "app.sock"),
+		SocketPath: filepath.Join(appDest, "app.sock"),
 		DataDir: data,
 		DownloadDir: downloads,
 		UIPath: env("UI_DIR", filepath.Join(appDest, "ui")),
