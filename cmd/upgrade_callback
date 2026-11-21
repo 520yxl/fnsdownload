@@ -15,6 +15,9 @@ ARCH="${TRIM_SYS_ARCH:-$(uname -m)}"
 mkdir -p "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"
 chmod 700 "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"
 if [[ "$(id -u)" -eq 0 ]]; then
+  chown -R "$TRIM_USERNAME:$TRIM_GROUPNAME" "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"
+fi
+if [[ "$(id -u)" -eq 0 ]]; then
   chown root:"$TRIM_GROUPNAME" "$TRIM_APPDEST"
   chmod 1770 "$TRIM_APPDEST"
 fi
