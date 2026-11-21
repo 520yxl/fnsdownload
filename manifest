@@ -1,5 +1,5 @@
 appname               = fnsdownload
-version               = 0.2.1
+version               = 0.2.2
 display_name          = MoxYi Download
 desc                  = Go + 迅雷官方 SDK 的飞牛原生下载器
 source                = thirdparty
