@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MoxYi Download</title><link rel="stylesheet" href="/style.css"></head>
+<body><header><div class="brand"><span class="logo">M</span><div><b>MoxYi Download</b><small>飞牛 NAS 迅雷下载器</small></div></div><button id="logout" class="ghost hidden">退出登录</button></header>
+<main>
+<section id="setup" class="panel hidden"><h1>首次初始化</h1><p>设置本地管理密码，并连接 Thunder_auth 授权中心。迅雷 API Key 不会进入 NAS。</p><form id="setupForm">
+<label>本地管理密码<input name="password" type="password" minlength="12" required></label><label>Thunder_auth 地址<input name="authBaseUrl" type="url" placeholder="https://你的授权中心域名" required></label><label>产品 ID<input name="productId" value="moxyi-download" required></label><label>产品 Secret<input name="productSecret" type="password" required></label><label>迅雷 App ID<input name="thunderAppId" required></label><button>保存并初始化</button><p id="setupError" class="error"></p></form></section>
+<section id="login" class="panel hidden"><h1>登录 MoxYi Download</h1><form id="loginForm"><label>管理密码<input name="password" type="password" required></label><button>登录</button><p id="loginError" class="error"></p></form></section>
+<div id="app" class="hidden"><section class="hero"><div><p class="eyebrow">DOWNLOAD CENTER</p><h1>下载管理</h1><p>通过迅雷 P2SP SDK 加速 HTTP / HTTPS 下载</p></div><button id="sdkLogin">连接迅雷服务</button></section>
+<section class="stats"><article><small>SDK 状态</small><strong id="sdkState">未连接</strong></article><article><small>下载任务</small><strong id="taskCount">0</strong></article><article><small>授权中心</small><strong id="authState">未配置</strong></article></section>
+<section class="panel"><h2>新建下载</h2><form id="taskForm" class="inline"><input name="url" type="url" placeholder="粘贴 HTTP / HTTPS 下载链接" required><input name="saveName" placeholder="保存文件名（可选）"><button>添加下载</button></form><p id="taskError" class="error"></p></section>
+<section class="panel"><div class="sectionHead"><h2>下载任务</h2><button id="reload" class="ghost">刷新</button></div><div id="tasks" class="tasks"><p class="muted">暂无下载任务</p></div></section>
+<details class="panel"><summary>授权与应用设置</summary><form id="configForm" class="settings"><label>Thunder_auth 地址<input name="authBaseUrl" type="url" required></label><label>产品 ID<input name="productId" required></label><label>更新产品 Secret（留空不修改）<input name="productSecret" type="password"></label><label>迅雷 App ID<input name="thunderAppId" required></label><button>保存设置</button><p id="configMessage" class="muted"></p></form></details></div>
+</main><script type="module" src="/app.js"></script></body></html>
