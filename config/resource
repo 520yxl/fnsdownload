@@ -1,0 +1,5 @@
+{
+  "docker": true,
+  "network": true,
+  "data_share": true
+}
