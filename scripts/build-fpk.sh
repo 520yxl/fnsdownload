@@ -57,7 +57,7 @@ FPK="$(find "$WORK" -type f -name "*.fpk" -print -quit)"
 if [[ -z "$FPK" ]]; then FPK="$(find "$ROOT" -maxdepth 1 -type f -name "*.fpk" -print -quit)"; fi
 [[ -n "$FPK" ]] || { echo "fnpack reported success but no FPK file was found"; find "$WORK" -maxdepth 3 -type f -printf "%p (%s bytes)\n"; exit 1; }
 cp "$FPK" "$DIST/fnsdownload-x86_64.fpk"
-python3 "$ROOT/scripts/normalize-fpk.py" "$DIST/fnsdownload-x86_64.fpk"
+# Do not rewrite the official fnpack output: archive metadata and checksums are owned by fnpack.
 file "$DIST/fnsdownload-x86_64.fpk"
 tar -tzf "$DIST/fnsdownload-x86_64.fpk" > "$DIST/fpk-files.txt"
 APP_TGZ_ENTRY="$(awk '$0 ~ /app[.]tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
@@ -65,6 +65,6 @@ APP_TGZ_ENTRY="$(awk '$0 ~ /app[.]tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
 tar -xOf "$DIST/fnsdownload-x86_64.fpk" "$APP_TGZ_ENTRY" | tar -tzf - > "$DIST/app-files.txt"
 for required in "ui/index.html" "ui/config" "server/fnsdownload-amd64" "ui/assets/app.css" "ui/assets/app.js" "ui/images/icon_0.png" "ui/images/icon_1.png"; do grep -Fxq "$required" "$DIST/app-files.txt" || { echo "Missing package entry: $required"; cat "$DIST/app-files.txt"; exit 1; }; done
 for required in "install" "upgrade" "uninstall" "config"; do grep -Eq "(^|\\./)wizard/$required$" "$DIST/fpk-files.txt" || { echo "Missing outer FPK entry: wizard/$required"; cat "$DIST/fpk-files.txt"; exit 1; }; done
-if grep -Eq '(^|/)(bin|config)/' "$DIST/app-files.txt"; then echo "Unexpected app/bin directory in app.tgz"; cat "$DIST/app-files.txt"; exit 1; fi
+if grep -Eq '(^|/)bin/' "$DIST/app-files.txt"; then echo "Unexpected app/bin directory in app.tgz"; cat "$DIST/app-files.txt"; exit 1; fi
 echo "FPK created: $DIST/fnsdownload-x86_64.fpk"
 echo "Build details: $DIST/build-info.txt"

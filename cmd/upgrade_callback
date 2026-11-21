@@ -10,7 +10,5 @@ if [[ "$(id -u)" -eq 0 ]]; then
   chown "$TRIM_USERNAME:$TRIM_GROUPNAME" "$TRIM_PKGVAR"
   chmod 750 "$TRIM_PKGVAR"
   chown -R "$TRIM_USERNAME:$TRIM_GROUPNAME" "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"
-  chown root:"$TRIM_GROUPNAME" "$TRIM_APPDEST"
-  chmod 1770 "$TRIM_APPDEST"
 fi
 chmod 700 "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"

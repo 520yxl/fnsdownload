@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-fail() {
-  printf '%s\n' "$1" >&2
-  if [[ -n "${TRIM_TEMP_LOGFILE:-}" ]]; then printf '%s\n' "$1" >"$TRIM_TEMP_LOGFILE"; fi
+# install_init runs before app files are installed. Do not require TRIM_APPDEST
+# or TRIM_PKGVAR to exist at this stage.
+if [[ "${TRIM_SYS_ARCH:-$(uname -m)}" != "x86_64" && "${TRIM_SYS_ARCH:-$(uname -m)}" != "amd64" && "${TRIM_SYS_ARCH:-$(uname -m)}" != "x86" ]]; then
+  printf '%s\n' "MoxYi Download requires x86_64 fnOS." >&2
+  if [[ -n "${TRIM_TEMP_LOGFILE:-}" ]]; then printf '%s\n' "MoxYi Download requires x86_64 fnOS." >"$TRIM_TEMP_LOGFILE"; fi
   exit 1
-}
-[[ "$(uname -m)" == "x86_64" || "$(uname -m)" == "amd64" ]] || fail "Only x86_64 fnOS supported."
-[[ -n "${TRIM_APPDEST:-}" ]] || fail "Missing TRIM_APPDEST"
-[[ -n "${TRIM_PKGVAR:-}" ]] || fail "Missing TRIM_PKGVAR"
+fi
+exit 0
