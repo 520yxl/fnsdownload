@@ -1,50 +1,88 @@
 #!/usr/bin/env bash
 set -euo pipefail
-APP_DIR="${TRIM_APPDEST:?TRIM_APPDEST is required}"
+
+APP_DEST="${TRIM_APPDEST:?TRIM_APPDEST is required}"
 PKGVAR="${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
-APP_VOL="${TRIM_APPDEST_VOL:?TRIM_APPDEST_VOL is required}"
-BIN="$APP_DIR/server/fnsdownload-amd64"
-PID_FILE="$PKGVAR/app.pid"
-LOG_FILE="$PKGVAR/gateway.log"
-DATA_DIR="$PKGVAR/data"
-DOWNLOAD_DIR="$APP_VOL/@appshare/fnsdownload/downloads"
-TARGET_DIR="$APP_DIR"
-SOCKET="$TARGET_DIR/app.sock"
-mkdir -p "$PKGVAR" "$DATA_DIR" "$DOWNLOAD_DIR" "$TARGET_DIR"
-chmod 700 "$DATA_DIR"
+APP_USER="${TRIM_USERNAME:-fnsdownload}"
+BIN="$APP_DEST/server/fnsdownload-amd64"
+SOCKET="$APP_DEST/app.sock"
+PID_FILE="$PKGVAR/fnsdownload.pid"
+LOG_DIR="$PKGVAR/logs"
+LOG_FILE="$LOG_DIR/app.log"
+TEMP_LOG="${TRIM_TEMP_LOGFILE:-}"
+
+report_error() {
+  printf '%s\n' "$1" >&2
+  if [[ -n "$TEMP_LOG" ]]; then printf '%s\n' "$1" >"$TEMP_LOG"; fi
+  printf '[%s] ERROR: %s\n' "$(date -Is)" "$1" >>"$LOG_FILE" 2>/dev/null || true
+}
+
 is_running() {
   [[ -s "$PID_FILE" ]] || return 1
-  local pid; pid="$(cat "$PID_FILE")"
-  [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null
+  local pid
+  pid="$(cat "$PID_FILE")"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" 2>/dev/null
 }
+
 case "${1:-}" in
- start)
-  is_running && [[ -S "$SOCKET" ]] && exit 0
-  [[ -x "$BIN" ]] || { echo "Go binary missing: $BIN" >&2; exit 1; }
-  [[ -f "$APP_DIR/ui/index.html" ]] || { echo "UI entry missing: $APP_DIR/ui/index.html" >&2; exit 1; }
-  rm -f "$SOCKET"
-  export DATA_DIR DOWNLOAD_DIR UI_DIR="$APP_DIR/ui" TRIM_APPDEST TRIM_PKGVAR TRIM_APPDEST_VOL HOME="$PKGVAR"
-  echo "Starting MoxYi Download: appdest=$APP_DIR socket=$SOCKET bin=$BIN ui=$APP_DIR/ui" >>"$LOG_FILE"
-  nohup "$BIN" >>"$LOG_FILE" 2>&1 </dev/null &
-  echo $! >"$PID_FILE"
-  for _ in {1..40}; do
-    if is_running && [[ -S "$SOCKET" ]]; then
-      if command -v curl >/dev/null 2>&1 && curl --silent --fail --max-time 2 --unix-socket "$SOCKET" "http://localhost/app/fnsdownload/api/health" | grep -q '"ok":true'; then exit 0; fi
+  start)
+    mkdir -p "$PKGVAR" "$LOG_DIR"
+    ARCH="${TRIM_SYS_ARCH:-$(uname -m)}"
+    if [[ "$ARCH" != "x86_64" && "$ARCH" != "amd64" ]]; then
+      report_error "MoxYi Download only supports x86_64 fnOS. Detected: $ARCH"
+      exit 1
     fi
-    sleep 0.5
-  done
-  rm -f "$PID_FILE"
-  echo "service failed health check; inspect $LOG_FILE" >&2
-  exit 1
-  ;;
- stop)
-  if is_running; then
-   pid="$(cat "$PID_FILE")"; kill "$pid" 2>/dev/null || true
-   for _ in {1..20}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
-   kill -9 "$pid" 2>/dev/null || true
-  fi
-  rm -f "$PID_FILE" "$SOCKET"
-  ;;
- status) is_running && [[ -S "$SOCKET" ]] && exit 0; exit 3 ;;
- *) echo "usage: $0 {start|stop|status}" >&2; exit 2 ;;
+    if is_running && [[ -S "$SOCKET" ]]; then exit 0; fi
+    if is_running; then
+      old_pid="$(cat "$PID_FILE")"
+      kill "$old_pid" 2>/dev/null || true
+      sleep 1
+    fi
+    rm -f "$PID_FILE" "$SOCKET"
+    [[ -x "$BIN" ]] || { report_error "Go service binary not found: $BIN"; exit 1; }
+    [[ -s "$APP_DEST/ui/index.html" ]] || { report_error "Desktop UI not found: $APP_DEST/ui/index.html"; exit 1; }
+    [[ -w "$APP_DEST" ]] || { report_error "Package user $APP_USER cannot create gateway socket in $APP_DEST."; exit 1; }
+
+    export DATA_DIR="$PKGVAR/data"
+    export UI_DIR="$APP_DEST/ui"
+    export HOME="${TRIM_PKGHOME:-$PKGVAR}"
+    export TRIM_APPDEST TRIM_PKGVAR TRIM_DATA_SHARE_PATHS
+    nohup "$BIN" >>"$LOG_FILE" 2>&1 </dev/null &
+    echo "$!" >"$PID_FILE"
+
+    for _ in {1..40}; do
+      if is_running && [[ -S "$SOCKET" ]]; then exit 0; fi
+      if ! is_running; then
+        report_error "Go service exited during startup. Inspect $LOG_FILE."
+        rm -f "$PID_FILE" "$SOCKET"
+        exit 1
+      fi
+      sleep 0.25
+    done
+    report_error "Go service did not create gateway socket $SOCKET within 10 seconds."
+    kill "$(cat "$PID_FILE")" 2>/dev/null || true
+    rm -f "$PID_FILE" "$SOCKET"
+    exit 1
+    ;;
+  stop)
+    if is_running; then
+      pid="$(cat "$PID_FILE")"
+      kill -TERM "$pid" 2>/dev/null || true
+      for _ in {1..40}; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.25
+      done
+      if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
+    fi
+    rm -f "$PID_FILE" "$SOCKET"
+    ;;
+  status)
+    if is_running && [[ -S "$SOCKET" ]]; then exit 0; fi
+    exit 3
+    ;;
+  *)
+    report_error "Usage: $0 {start|stop|status}"
+    exit 1
+    ;;
 esac
