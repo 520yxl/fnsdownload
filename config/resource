@@ -1,9 +1,17 @@
 {
-  "docker": true,
-  "network": true,
+  "docker-project": {
+    "projects": [
+      {
+        "name": "fnsdownload",
+        "path": "docker"
+      }
+    ]
+  },
   "data-share": {
     "shares": [
-      { "name": "fnsdownload" }
+      {
+        "name": "fnsdownload"
+      }
     ]
   }
 }
