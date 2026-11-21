@@ -19,7 +19,7 @@ jobs:
           chmod +x /usr/local/bin/fnpack
           fnpack --help
       - name: Build native x86_64 FPK payload
-        run: ./scripts/build-fpk.sh
+        run: bash ./scripts/build-fpk.sh
       - name: Inspect FPK and payload
         run: |
           file dist/fnsdownload-x86_64.fpk
