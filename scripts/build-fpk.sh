@@ -75,11 +75,25 @@ if [[ "$(id -u)" -eq 0 ]]; then chown -R 0:0 "$WORK/app" "$WORK/config" "$WORK/c
     sudo -n fnpack build --directory . --nosign
   fi
 )
-FPK="$(find "$WORK" -type f -name "*.fpk" -print -quit)"
-if [[ -z "$FPK" ]]; then FPK="$(find "$ROOT" -maxdepth 1 -type f -name "*.fpk" -print -quit)"; fi
-[[ -n "$FPK" ]] || { echo "fnpack reported success but no FPK file was found" >&2; find "$WORK" -maxdepth 3 -type f -printf "%p (%s bytes)\n"; exit 1; }
-cp "$FPK" "$DIST/fnsdownload-x86_64.fpk"
-# Keep fnpack's original output intact; do not rewrite its tar metadata.
+# fnOS stores only the app/ subtree in app.tgz. Normalize the final package
+# to the documented layout; the current fnpack output duplicates outer config/.
+[[ -d "$WORK/app/server" && -d "$WORK/app/ui" ]] || { echo "Missing staged app/ payload after fnpack build" >&2; exit 1; }
+rm -f "$WORK/app.tgz"
+tar --owner=0 --group=0 --numeric-owner -czf "$WORK/app.tgz" -C "$WORK/app" .
+APP_MD5="$(md5sum "$WORK/app.tgz" | awk '{print $1}')"
+python3 - "$WORK/manifest" "$APP_MD5" <<'PY'
+from pathlib import Path
+import re, sys
+p = Path(sys.argv[1])
+s = p.read_text()
+if re.search(r"(?m)^checksum\\s*=", s):
+    s = re.sub(r"(?m)^checksum\\s*=.*$", "checksum=" + sys.argv[2], s)
+else:
+    s = s.rstrip() + "\\nchecksum=" + sys.argv[2] + "\\n"
+p.write_text(s)
+PY
+rm -rf "$WORK/app"
+tar --owner=0 --group=0 --numeric-owner -czf "$DIST/fnsdownload-x86_64.fpk" -C "$WORK" app.tgz cmd config manifest ICON.PNG ICON_256.PNG wizard i18n
 file "$DIST/fnsdownload-x86_64.fpk"
 tar -tzf "$DIST/fnsdownload-x86_64.fpk" > "$DIST/fpk-files.txt"
 APP_TGZ_ENTRY="$(awk '$0 ~ /app[.]tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
@@ -116,10 +130,10 @@ with tarfile.open(sys.argv[1], "r:gz") as outer:
         expected = {"server/fnsdownload-amd64", "ui/index.html", "ui/config"}
         if not expected.issubset(names):
             raise SystemExit(f"Missing runtime files: {sorted(expected - names)}")
-        forbidden = {"manifest", "cmd/main"}
+        forbidden = {"manifest", "cmd/main", "config/privilege", "config/resource"}
         duplicated = forbidden & names
         if duplicated:
-            raise SystemExit(f"FPK outer control files wrongly duplicated inside app.tgz: {sorted(duplicated)}")
+            raise SystemExit(f"FPK outer metadata wrongly duplicated inside app.tgz: {sorted(duplicated)}")
         print("fnOS FPK outer metadata and app.tgz runtime payload separation passed")
 PY
 echo "FPK created: $DIST/fnsdownload-x86_64.fpk"
