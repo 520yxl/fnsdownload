@@ -23,10 +23,7 @@ func main() {
 	if err != nil { log.Fatalf("listen unix socket %s: %v", cfg.SocketPath, err) }
 	if err := os.Chmod(cfg.SocketPath, 0660); err != nil { log.Fatal(err) }
 
-	srv := &http.Server{
-		Handler: app.NewHandler(cfg),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	srv := &http.Server{Handler: app.NewHandler(cfg), ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go func() {
