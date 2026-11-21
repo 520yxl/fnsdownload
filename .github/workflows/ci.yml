@@ -13,6 +13,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23.x"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build Vue 3 frontend
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
       - name: Install fnpack
         run: |
           curl -fL --retry 3 https://static2.fnnas.com/fnpack/fnpack-1.3.3-linux-amd64 -o /usr/local/bin/fnpack

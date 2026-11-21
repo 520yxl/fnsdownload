@@ -1,0 +1,9 @@
+{
+  "name": "moxyi-download-ui",
+  "private": true,
+  "version": "0.4.0",
+  "type": "module",
+  "scripts": { "build": "vite build" },
+  "dependencies": { "vue": "^3.5.13" },
+  "devDependencies": { "@vitejs/plugin-vue": "^5.2.1", "vite": "^6.0.7", "typescript": "^5.7.2" }
+}
