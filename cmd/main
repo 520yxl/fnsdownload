@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  start)
+    # fnOS docker-project resource owns compose lifecycle.
+    exit 0
+    ;;
+  stop)
+    # fnOS docker-project resource owns compose lifecycle.
+    exit 0
+    ;;
+  status)
+    if docker ps --filter "name=^/fnsdownload$" --filter "status=running" --format '{{.ID}}' | grep -q .; then
+      exit 0
+    fi
+    exit 3
+    ;;
+  *)
+    echo "usage: $0 {start|stop|status}" >&2
+    exit 2
+    ;;
+esac
