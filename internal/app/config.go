@@ -6,18 +6,21 @@ import (
 )
 
 type Config struct {
-	ListenAddr  string
+	SocketPath  string
 	DataDir     string
 	DownloadDir string
+	GatewayPrefix string
 }
 
 func ConfigFromEnv() Config {
+	appDest := env("TRIM_APPDEST", ".")
 	data := env("DATA_DIR", filepath.Join(env("TRIM_PKGVAR", "."), "data"))
 	downloads := env("DOWNLOAD_DIR", filepath.Join(env("TRIM_APPDEST_VOL", "."), "@appshare", "fnsdownload", "downloads"))
 	return Config{
-		ListenAddr:  ":" + env("PORT", "8088"),
-		DataDir:     data,
+		SocketPath: filepath.Join(appDest, "app.sock"),
+		DataDir: data,
 		DownloadDir: downloads,
+		GatewayPrefix: "/app/fnsdownload",
 	}
 }
 
