@@ -1,5 +1,5 @@
 import http from "node:http";
-import {createHash,randomBytes} from "node:crypto";
+import {createHash,randomBytes,scryptSync,timingSafeEqual} from "node:crypto";
 import {readFile,stat,mkdir} from "node:fs/promises";
 import path from "node:path";
 import {ensureStore,loadConfig,saveConfig,loadTasks,saveTasks,sdkConfigPath} from "./store.js";
@@ -7,7 +7,7 @@ import {ThunderAuthClient} from "./thunder-auth.js";
 import * as sdk from "./thunder-sdk.js";
 const PORT=Number(process.env.PORT||8088), PUBLIC=path.resolve("public"), sessions=new Map();
 let sdkReady=false;
-const hash=s=>createHash("sha256").update(s).digest("hex");
+const makePasswordHash=s=>{const salt=randomBytes(16);const derived=scryptSync(s,salt,64);return salt.toString("hex")+":"+derived.toString("hex");};\nconst verifyPassword=(s,stored)=>{try{const [saltHex,hashHex]=stored.split(":");const expected=Buffer.from(hashHex,"hex"),actual=scryptSync(s,Buffer.from(saltHex,"hex"),64);return expected.length===actual.length&&timingSafeEqual(expected,actual);}catch{return false;}};\nfunction originAllowed(req){const origin=req.headers.origin;if(!origin)return true;try{return new URL(origin).host===req.headers.host;}catch{return false;}}
 const json=(res,status,data)=>{res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"});res.end(JSON.stringify(data));};
 const cookies=req=>Object.fromEntries((req.headers.cookie||"").split(";").map(x=>x.trim().split("=")).filter(x=>x.length===2));
 const setSession=(res,sid)=>res.setHeader("Set-Cookie","moxyi_session="+sid+"; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200");
@@ -22,10 +22,10 @@ async function route(req,res,url){
   const c=await loadConfig();if(c.adminPasswordHash)return json(res,409,{error:"already_configured"});
   const b=await readBody(req);if(typeof b.password!=="string"||b.password.length<12)return json(res,400,{error:"password_must_be_at_least_12_chars"});
   if(!/^https:\/\//.test(b.authBaseUrl||"")||!b.productSecret||!b.thunderAppId)return json(res,400,{error:"invalid_authorization_settings"});
-  c.adminPasswordHash=hash(b.password);c.authBaseUrl=b.authBaseUrl.replace(/\/+$/,"");c.productId=b.productId||"moxyi-download";c.productSecret=b.productSecret;c.thunderAppId=b.thunderAppId;c.downloadDir="/downloads";await saveConfig(c);
+  c.adminPasswordHash=makePasswordHash(b.password);c.authBaseUrl=b.authBaseUrl.replace(/\/+$/,"");c.productId=b.productId||"moxyi-download";c.productSecret=b.productSecret;c.thunderAppId=b.thunderAppId;c.downloadDir="/downloads";await saveConfig(c);
   const sid=randomBytes(32).toString("base64url");sessions.set(sid,Date.now()+43200000);setSession(res,sid);return json(res,201,{configured:true});
  }
- if(p==="/api/login"&&req.method==="POST"){const c=await loadConfig(),b=await readBody(req);if(!c.adminPasswordHash||hash(String(b.password||""))!==c.adminPasswordHash)return json(res,401,{error:"invalid_credentials"});const sid=randomBytes(32).toString("base64url");sessions.set(sid,Date.now()+43200000);setSession(res,sid);return json(res,200,{loggedIn:true});}
+ if(p==="/api/login"&&req.method==="POST"){const c=await loadConfig(),b=await readBody(req);if(!c.adminPasswordHash||!verifyPassword(String(b.password||""),c.adminPasswordHash))return json(res,401,{error:"invalid_credentials"});const sid=randomBytes(32).toString("base64url");sessions.set(sid,Date.now()+43200000);setSession(res,sid);return json(res,200,{loggedIn:true});}
  if(p==="/api/logout"&&req.method==="POST"){sessions.delete(cookies(req).moxyi_session);res.setHeader("Set-Cookie","moxyi_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");return json(res,200,{loggedOut:true});}
  if(!authed(req))return json(res,401,{error:"login_required"});
  if(p==="/api/config"&&req.method==="GET"){const c=await loadConfig();return json(res,200,{authBaseUrl:c.authBaseUrl,productId:c.productId,thunderAppId:c.thunderAppId,downloadDir:c.downloadDir,sdkReady});}
