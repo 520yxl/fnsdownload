@@ -25,7 +25,7 @@ func NewHandler(cfg Config) http.Handler {
 
 func (h *Handler) routes() {
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.2.1", "runtime": "go"})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.2.3", "runtime": "go"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -33,7 +33,13 @@ func (h *Handler) routes() {
 			"data_dir": filepath.Clean(h.cfg.DataDir),
 		})
 	})
-	h.mux.Handle("/", webHandler())
+	if info, err := os.Stat(filepath.Join(h.cfg.UIPath, "index.html")); err == nil && !info.IsDir() {
+		h.mux.Handle("/", http.FileServer(http.Dir(h.cfg.UIPath)))
+	} else {
+		h.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "MoxYi Download UI assets are missing. Reinstall the FPK package.", http.StatusServiceUnavailable)
+		})
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
