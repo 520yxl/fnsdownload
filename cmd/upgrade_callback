@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
+mkdir -p "${TRIM_PKGVAR}/data"
+chmod 700 "${TRIM_PKGVAR}/data"
