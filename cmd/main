@@ -8,8 +8,9 @@ PID_FILE="$PKGVAR/run/fnsdownload.pid"
 LOG_FILE="$PKGVAR/log/app.log"
 DATA_DIR="$PKGVAR/data"
 DOWNLOAD_DIR="$APP_VOL/@appshare/fnsdownload/downloads"
-SOCKET="$APP_DIR/app.sock"
-mkdir -p "$PKGVAR/run" "$PKGVAR/log" "$DATA_DIR" "$DOWNLOAD_DIR"
+TARGET_DIR="$APP_DIR/target"
+SOCKET="$TARGET_DIR/app.sock"
+mkdir -p "$PKGVAR/run" "$PKGVAR/log" "$DATA_DIR" "$DOWNLOAD_DIR" "$TARGET_DIR"
 chmod 700 "$PKGVAR/run" "$DATA_DIR"
 is_running() {
   [[ -s "$PID_FILE" ]] || return 1
@@ -24,12 +25,12 @@ case "${1:-}" in
   export DATA_DIR DOWNLOAD_DIR TRIM_APPDEST TRIM_PKGVAR TRIM_APPDEST_VOL HOME="$PKGVAR"
   nohup "$BIN" >>"$LOG_FILE" 2>&1 </dev/null &
   echo $! >"$PID_FILE"
-  for _ in {1..20}; do
+  for _ in {1..30}; do
     if is_running && [[ -S "$SOCKET" ]]; then exit 0; fi
     sleep 0.5
   done
   rm -f "$PID_FILE"
-  echo "service failed to create gateway socket; inspect $LOG_FILE" >&2
+  echo "service failed to create $SOCKET; inspect $LOG_FILE" >&2
   exit 1
   ;;
  stop)
