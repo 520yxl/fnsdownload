@@ -4,9 +4,10 @@
       "title": "MoxYi Download",
       "icon": "images/icon_{0}.png",
       "type": "iframe",
-      "protocol": "http",
-      "port": "${wizard_port}",
-      "url": "/",
+      "protocol": "",
+      "gatewayPrefix": "/app/fnsdownload",
+      "gatewaySocket": "app.sock",
+      "url": "/app/fnsdownload",
       "allUsers": false
     }
   }
