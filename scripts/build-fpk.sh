@@ -105,6 +105,11 @@ with tarfile.open(sys.argv[1], "r:gz") as outer:
     missing = required_outer - set(files)
     if missing:
         raise SystemExit(f"Missing FPK outer files: {sorted(missing)}")
+    for script in ("cmd/main", "cmd/install_init", "cmd/install_callback", "cmd/upgrade_init", "cmd/upgrade_callback", "cmd/uninstall_init", "cmd/uninstall_callback", "cmd/config_init", "cmd/config_callback"):
+        if script not in files:
+            raise SystemExit(f"Missing fnOS lifecycle script: {script}")
+        if files[script].mode & 0o111 == 0:
+            raise SystemExit(f"fnOS lifecycle script is not executable: {script} mode={oct(files[script].mode)}")
     payload = outer.extractfile(files["app.tgz"]).read()
     with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as inner:
         names = {m.name.removeprefix("./") for m in inner.getmembers()}
