@@ -50,7 +50,7 @@ if [[ -z "$FPK" ]]; then FPK="$(find "$ROOT" -maxdepth 1 -type f -name "*.fpk" -
 cp "$FPK" "$DIST/fnsdownload-x86_64.fpk"
 file "$DIST/fnsdownload-x86_64.fpk"
 tar -tzf "$DIST/fnsdownload-x86_64.fpk" > "$DIST/fpk-files.txt"
-APP_TGZ_ENTRY="$(awk '/(^|\\/)app.tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
+APP_TGZ_ENTRY="$(awk '$0 ~ /app[.]tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
 [[ -n "$APP_TGZ_ENTRY" ]] || { echo "FPK is missing app.tgz" >&2; cat "$DIST/fpk-files.txt"; exit 1; }
 tar -xOf "$DIST/fnsdownload-x86_64.fpk" "$APP_TGZ_ENTRY" | tar -tzf - > "$DIST/app-files.txt"
 for required in "ui/index.html" "ui/config" "server/fnsdownload-amd64" "ui/assets/app.css" "ui/assets/app.js" "ui/images/icon_0.png" "ui/images/icon_1.png"; do grep -Fxq "$required" "$DIST/app-files.txt" || { echo "Missing package entry: $required" >&2; cat "$DIST/app-files.txt"; exit 1; }; done
