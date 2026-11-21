@@ -1,7 +1,7 @@
 name: Native fnOS FPK
 on:
   push:
-    branches: [develop, main, refactor/fnos-native]
+    branches: [develop, main, refactor/fnos-native, refactor/fnos-official-layout]
   pull_request:
     branches: [develop, main]
   workflow_dispatch:
