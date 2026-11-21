@@ -8,6 +8,30 @@ SDK_ROOT="${XUNLEI_SDK_ROOT:-}"
 command -v go >/dev/null 2>&1 || { echo "Go is required on the build host" >&2; exit 1; }
 command -v fnpack >/dev/null 2>&1 || { echo "Official fnpack is required on the build host" >&2; exit 1; }
 cd "$ROOT"
+bash -n cmd/* scripts/build-fpk.sh
+python3 - <<'PY'
+import json
+from pathlib import Path
+manifest = {}
+for line in Path("manifest").read_text().splitlines():
+    line = line.strip()
+    if not line or line.startswith("#"):
+        continue
+    key, value = line.split("=", 1)
+    manifest[key.strip()] = value.strip()
+entry = json.loads(Path("app/ui/config").read_text())[".url"]
+json.loads(Path("config/privilege").read_text())
+json.loads(Path("config/resource").read_text())
+assert manifest["platform"] == "x86", manifest
+assert manifest["desktop_uidir"] == "ui", manifest
+assert manifest["desktop_applaunchname"] in entry, manifest
+desktop = entry[manifest["desktop_applaunchname"]]
+assert desktop["gatewayPrefix"] == "/app/fnsdownload", desktop
+assert desktop["gatewaySocket"] == "app.sock", desktop
+assert desktop["url"] == "/app/fnsdownload", desktop
+assert "service_port" not in manifest, manifest
+print("fnOS manifest, desktop entry, privilege and resource validation passed")
+PY
 go test ./...
 go vet ./...
 rm -rf "$WORK" "$DIST"
