@@ -8,7 +8,7 @@ SDK_ROOT="${XUNLEI_SDK_ROOT:-}"
 command -v go >/dev/null 2>&1 || { echo "Go is required on the build host" >&2; exit 1; }
 command -v fnpack >/dev/null 2>&1 || { echo "Official fnpack is required on the build host" >&2; exit 1; }
 cd "$ROOT"
-bash -n cmd/* scripts/build-fpk.sh
+for script in cmd/* scripts/build-fpk.sh; do [[ -f "$script" ]] && bash -n "$script"; done
 python3 - <<'PY'
 import json
 from pathlib import Path
