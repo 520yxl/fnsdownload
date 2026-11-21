@@ -47,7 +47,8 @@ case "${1:-}" in
     export DATA_DIR="$PKGVAR/data"
     export UI_DIR="$APP_DEST/ui"
     export HOME="${TRIM_PKGHOME:-$PKGVAR}"
-    export TRIM_APPDEST TRIM_PKGVAR TRIM_DATA_SHARE_PATHS
+    export TRIM_APPDEST TRIM_PKGVAR
+    export TRIM_DATA_SHARE_PATHS="${TRIM_DATA_SHARE_PATHS:-}"
     nohup "$BIN" >>"$LOG_FILE" 2>&1 </dev/null &
     echo "$!" >"$PID_FILE"
 
