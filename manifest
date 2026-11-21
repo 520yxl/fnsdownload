@@ -1,0 +1,8 @@
+appname = fnsdownload
+version = 0.1.0
+display_name = MoxYi Download
+desc = 迅雷 SDK 驱动的飞牛 NAS 下载器
+arch = x86
+maintainer = MoxYi
+website = https://github.com/520yxl/fnsdownload
+source = https://github.com/520yxl/fnsdownload
