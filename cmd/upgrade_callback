@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-: "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
+fail() {
+  printf '%s\n' "$1" >&2
+  if [[ -n "${TRIM_TEMP_LOGFILE:-}" ]]; then printf '%s\n' "$1" >"$TRIM_TEMP_LOGFILE"; fi
+  exit 1
+}
 : "${TRIM_APPDEST:?TRIM_APPDEST is required}"
-APP_GROUP="${TRIM_GROUPNAME:-fnsdownload}"
-mkdir -p "${TRIM_PKGVAR}/data" "${TRIM_APPDEST}"
-chmod 700 "${TRIM_PKGVAR}/data"
-chmod +x "${TRIM_APPDEST}/server/fnsdownload-amd64"
-test -s "${TRIM_APPDEST}/ui/index.html"
-chown root:"$APP_GROUP" "$TRIM_APPDEST"
-chmod 1775 "$TRIM_APPDEST"
+: "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
+: "${TRIM_GROUPNAME:?TRIM_GROUPNAME is required}"
+ARCH="${TRIM_SYS_ARCH:-$(uname -m)}"
+[[ "$ARCH" == "x86_64" || "$ARCH" == "amd64" ]] || fail "MoxYi Download only supports x86_64 fnOS."
+[[ -x "$TRIM_APPDEST/server/fnsdownload-amd64" ]] || fail "Upgrade package is missing the Go service binary."
+[[ -s "$TRIM_APPDEST/ui/index.html" ]] || fail "Upgrade package is missing the desktop Web UI."
+mkdir -p "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"
+chmod 700 "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"
+if [[ "$(id -u)" -eq 0 ]]; then
+  chown root:"$TRIM_GROUPNAME" "$TRIM_APPDEST"
+  chmod 1770 "$TRIM_APPDEST"
+fi
+[[ -w "$TRIM_APPDEST" ]] || fail "The package user cannot create target/app.sock after upgrade."
