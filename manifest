@@ -1,4 +1,4 @@
-version="0.2.4"
+version="0.2.5"
 appname="fnsdownload"
 desc="Go + 迅雷官方 SDK 的飞牛原生下载器"
 display_name="MoxYi Download"
