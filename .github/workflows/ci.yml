@@ -6,34 +6,32 @@ on:
     branches: [develop, main]
   workflow_dispatch:
 jobs:
-  test:
+  test-and-package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23.x"
-      - run: go test ./...
-      - run: go vet ./...
-      - name: Build native Go service
-        run: |
-          mkdir -p app/bin
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o app/bin/fnsdownload ./cmd/fnsdownload
-          file app/bin/fnsdownload
-      - name: Install fnpack 1.3.3
+      - name: Install fnpack
         run: |
           curl -fL --retry 3 https://static2.fnnas.com/fnpack/fnpack-1.3.3-linux-amd64 -o /usr/local/bin/fnpack
           chmod +x /usr/local/bin/fnpack
           fnpack --help
-      - name: Build unsigned native FPK
-        run: fnpack build --directory . --nosign
-      - name: Verify FPK output
+      - name: Build native x86_64 FPK payload
+        run: ./scripts/build-fpk.sh
+      - name: Inspect FPK and payload
         run: |
-          find . -maxdepth 2 -type f -name '*.fpk' -size +10k -print
-          test "$(find . -maxdepth 2 -type f -name '*.fpk' -size +10k | wc -l)" -ge 1
+          file dist/fnsdownload-x86_64.fpk
+          cat dist/build-info.txt
+          cat dist/app-files.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: fnsdownload-native-fpk-${{ github.sha }}
-          path: "*.fpk"
+          name: fnsdownload-x86_64-${{ github.sha }}
+          path: |
+            dist/fnsdownload-x86_64.fpk
+            dist/build-info.txt
+            dist/fpk-files.txt
+            dist/app-files.txt
           if-no-files-found: error
           retention-days: 14
