@@ -2,5 +2,5 @@
 set -euo pipefail
 : "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
 : "${TRIM_APPDEST_VOL:?TRIM_APPDEST_VOL is required}"
-mkdir -p "${TRIM_PKGVAR}/data" "${TRIM_APPDEST_VOL}/@appshare/fnsdownload/downloads"
-chmod 700 "${TRIM_PKGVAR}/data"
+mkdir -p "${TRIM_PKGVAR}/data" "${TRIM_PKGVAR}/run" "${TRIM_PKGVAR}/log" "${TRIM_APPDEST_VOL}/@appshare/fnsdownload/downloads"
+chmod 700 "${TRIM_PKGVAR}/data" "${TRIM_PKGVAR}/run"
