@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Download files and persistent configuration are intentionally preserved.
+# fnOS removes the app target. The data share is not removed here.
+# wizard_keep_data=false explicitly requests deletion of app configuration.
+if [[ "${wizard_keep_data:-true}" == "false" && -n "${TRIM_PKGVAR:-}" ]]; then
+  rm -rf -- "$TRIM_PKGVAR/data"
+fi
 exit 0

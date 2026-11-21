@@ -1,22 +1,20 @@
-# MoxYi Download 原生 FPK 构建
+# Native fnOS FPK Build
 
-目标仅为 Linux x86_64/amd64。禁止 Docker、Compose、ARM64 产物。
+Target: Linux x86_64 / amd64 only. fnOS Manifest platform value: x86.
 
-## 包内结构
-FPK 根目录包含 manifest、config、cmd、wizard、i18n、图标和 app.tgz。app.tgz 内必须有：
-- server/fnsdownload-amd64
-- ui/index.html
-- ui/config
-- ui/assets/app.css、ui/assets/app.js
-- ui/images/icon_0.png、ui/images/icon_1.png
+## Package layout
+FPK root: manifest, config/, cmd/, wizard/, i18n/, ICON.PNG, ICON_256.PNG and app.tgz.
+The app archive must contain server/fnsdownload-amd64 and the complete ui/ tree including ui/config and both desktop icons.
 
-Go 后端监听 `${TRIM_APPDEST}/target/app.sock`，由 fnOS 统一网关以 /app/fnsdownload 转发。
+## fnOS runtime paths
+Use TRIM_APPDEST, TRIM_PKGETC, TRIM_PKGVAR, TRIM_PKGHOME, TRIM_DATA_SHARE_PATHS and TRIM_TEMP_LOGFILE. Do not hard-code volume numbers or treat TRIM_APPDEST as the app's parent directory.
 
-## 本地构建
+## Build and verify
 ```bash
 go test ./...
 go vet ./...
+bash -n cmd/*
 ./scripts/build-fpk.sh
 ```
 
-正式迅雷 SDK 构建需要迅雷官方 Linux x64 SDK，头文件和动态库必须真实存在；没有 SDK 时只能生成 UI/网关开发测试包，不能标记为正式下载器。
+CI package checks are structural checks only. The resulting FPK must be installed and launched on a physical fnOS x86_64 NAS before it is considered compatible. A build without the official Xunlei SDK is only a gateway/UI development package, not a production downloader.

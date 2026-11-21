@@ -1,30 +1,36 @@
-# 架构
+# MoxYi Download — fnOS Native Architecture
 
-- fnOS FPK：安装、升级和应用中心入口。
-- Docker 容器：Node.js 22 + 迅雷官方 Node.js SDK。
-- Web UI：下载任务、授权状态、设置。
-- HTTP API：本机 UI 与 SDK Worker 的控制面。
-- ThunderAuthClient：按 Thunder_auth v1 规范生成 HMAC，注册设备并请求共享 Login Token。
-- XLDownloadAPI：唯一 SDK 适配层。
-- 持久化：/data/config.json、/data/tasks.json、/data/sdk。
-- 下载目录：/downloads，映射到用户选择的 NAS 共享文件夹。
+This document replaces the obsolete Docker/Node.js deployment description.
 
-## 数据流
-1. 首次打开页面，设置本地密码、Thunder_auth URL、Product ID/Secret、迅雷 App ID。
-2. 点击连接迅雷服务。
-3. 使用稳定 device_id 调用 POST /api/v1/auth/register。
-4. 调用 POST /api/v1/auth/token 获取共享 JWT；不持有迅雷 API Key。
-5. 调用 SDK init，再调用 login(loginToken)。
-6. 下载请求调用 createP2spTask、startTask；状态由 getTaskState 查询。
+## Product constraints
+- Native fnOS FPK; no Docker, Compose, container runtime or sidecar.
+- Go backend and static Web UI.
+- x86_64 / amd64 only; fnOS manifest platform is x86.
+- Thunder_auth is the online product authorization service. The NAS never stores the official Thunder API Key.
 
-## 安全边界
-- 产品 Secret 保存在 NAS /data/config.json，文件权限 0600。
-- 本地管理密码保存 SHA-256 摘要；Session 存进程内存，重启后失效。
-- Token 不写入磁盘或日志。
-- 当前管理 UI 应仅在可信 LAN 访问，不要直接暴露公网。
-- HMAC Secret 可由 NAS 管理员提取，不是硬件绑定凭据。
+## fnOS package contract
+The FPK root contains manifest, config/, cmd/, wizard/, i18n/, app icons and app.tgz. The extracted app payload contains:
+- server/fnsdownload-amd64: native Go service.
+- ui/index.html, ui/config, ui/assets/, ui/images/: desktop UI and entry registration.
+- app.sock: created at runtime directly under TRIM_APPDEST.
 
-## 当前限制
-- 官方 Node.js SDK 文档当前支持 Linux x64，不包含 Linux ARM64。
-- 官方 SDK 当前只开放 HTTP(S) 协议下载；BT、磁力链、ed2k 不支持。
-- 原生库须在真实 fnOS x86_64 设备验证动态库依赖、重启恢复和并发行为。
+## fnOS paths
+- TRIM_APPDEST: installed target directory. Gateway socket is ${TRIM_APPDEST}/app.sock.
+- TRIM_PKGETC: application configuration directory.
+- TRIM_PKGVAR: persistent application data, SQLite, state and logs.
+- TRIM_PKGHOME: application home.
+- TRIM_DATA_SHARE_PATHS: system-created download share declared in config/resource.
+
+No script may hard-code a volume number or manually invent an @appshare path.
+
+## Desktop gateway
+The stable desktop entry ID is fnsdownload.main, declared both in Manifest and app/ui/config. It registers /app/fnsdownload and app.sock. The Go HTTP server serves all UI/API paths below the gateway prefix. WebSocket paths, when implemented, must remain under the same prefix.
+
+## Process lifecycle
+cmd/main owns start/stop/status. It validates x86_64, checks the packaged Go binary and UI, starts one background process, waits for the Unix socket, terminates gracefully, and returns fnOS-compatible status codes. Lifecycle scripts are idempotent and report actionable failures to TRIM_TEMP_LOGFILE.
+
+## Security and access
+The service runs as the dedicated package user (config/privilege). The gateway authenticates fnOS sessions and forwards X-Trim-Userid, X-Trim-Isadmin, and X-Trim-Username. The application must enforce business permissions; never trust client-supplied user IDs. Downloads are stored only in the declared share. All paths are normalized and constrained to the download root.
+
+## SDK boundary
+The official Linux x64 Thunder SDK is integrated only when the actual vendor SDK headers and shared libraries are supplied to the build. A stub/dev build is not a functional download client and must not be represented as production-ready.
