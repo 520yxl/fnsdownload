@@ -22,7 +22,7 @@ if [[ -n "$SDK_ROOT" ]]; then
   cp -a "$SDK_ROOT/lib/." "$ROOT/third_party/xunlei/lib/"
   CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -tags xunlei_sdk -ldflags="-s -w" -o "$WORK/app/server/fnsdownload-amd64" ./cmd/fnsdownload
   mkdir -p "$WORK/app/server/lib"
-  cp -a "$SDK_ROOT/lib/." "$WORK/server/lib/"
+  cp -a "$SDK_ROOT/lib/." "$WORK/app/server/lib/"
   echo "SDK_BUILD=enabled" > "$DIST/build-info.txt"
 else
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$WORK/app/server/fnsdownload-amd64" ./cmd/fnsdownload
@@ -37,26 +37,22 @@ cp "$ROOT/manifest" "$WORK/manifest"
 cp -a "$ROOT/config/." "$WORK/config/"
 cp -a "$ROOT/cmd/." "$WORK/cmd/"
 cp -a "$ROOT/wizard/." "$WORK/wizard/"
-if [[ -d "$ROOT/i18n" ]]; then cp -a "$ROOT/i18n/." "$WORK/i18n/"; fi
+cp -a "$ROOT/i18n/." "$WORK/i18n/"
 cp "$ROOT/ICON.PNG" "$WORK/ICON.PNG"
 cp "$ROOT/ICON_256.PNG" "$WORK/ICON_256.PNG"
 (
   cd "$WORK"
   fnpack build --directory . --nosign
 )
-FPK="$(find "$ROOT" -type f -name "*.fpk" ! -path "$DIST/*" -print -quit)"
-[[ -n "$FPK" ]] || { echo "fnpack did not produce an FPK" >&2; exit 1; }
+FPK="$(find "$WORK" -type f -name "*.fpk" -print -quit)"
+if [[ -z "$FPK" ]]; then FPK="$(find "$ROOT" -maxdepth 1 -type f -name "*.fpk" -print -quit)"; fi
+[[ -n "$FPK" ]] || { echo "fnpack reported success but no FPK file was found" >&2; find "$WORK" -maxdepth 3 -type f -printf "%p (%s bytes)\n"; exit 1; }
 cp "$FPK" "$DIST/fnsdownload-x86_64.fpk"
 file "$DIST/fnsdownload-x86_64.fpk"
 tar -tzf "$DIST/fnsdownload-x86_64.fpk" > "$DIST/fpk-files.txt"
-cat "$DIST/fpk-files.txt"
-APP_TGZ_ENTRY="$(grep -E '(^|/)app.tgz
-for required in "ui/index.html" "ui/config" "server/fnsdownload-amd64" "ui/assets/app.css" "ui/assets/app.js" "ui/images/icon_0.png" "ui/images/icon_1.png"; do grep -Fxq "$required" "$DIST/app-files.txt" || { echo "Missing package entry: $required" >&2; exit 1; }; done
-echo "FPK created: $DIST/fnsdownload-x86_64.fpk"
-echo "Build details: $DIST/build-info.txt"
- "$DIST/fpk-files.txt" | head -n 1)"
-[[ -n "$APP_TGZ_ENTRY" ]] || { echo "FPK is missing app.tgz" >&2; exit 1; }
+APP_TGZ_ENTRY="$(awk '/(^|\\/)app.tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
+[[ -n "$APP_TGZ_ENTRY" ]] || { echo "FPK is missing app.tgz" >&2; cat "$DIST/fpk-files.txt"; exit 1; }
 tar -xOf "$DIST/fnsdownload-x86_64.fpk" "$APP_TGZ_ENTRY" | tar -tzf - > "$DIST/app-files.txt"
-for required in "ui/index.html" "ui/config" "server/fnsdownload-amd64" "ui/assets/app.css" "ui/assets/app.js" "ui/images/icon_0.png" "ui/images/icon_1.png"; do grep -Fxq "$required" "$DIST/app-files.txt" || { echo "Missing package entry: $required" >&2; exit 1; }; done
+for required in "ui/index.html" "ui/config" "server/fnsdownload-amd64" "ui/assets/app.css" "ui/assets/app.js" "ui/images/icon_0.png" "ui/images/icon_1.png"; do grep -Fxq "$required" "$DIST/app-files.txt" || { echo "Missing package entry: $required" >&2; cat "$DIST/app-files.txt"; exit 1; }; done
 echo "FPK created: $DIST/fnsdownload-x86_64.fpk"
 echo "Build details: $DIST/build-info.txt"
