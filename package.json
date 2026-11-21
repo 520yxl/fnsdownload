@@ -1,0 +1,17 @@
+{
+  "name": "moxyi-fnsdownload",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MoxYi Download for fnOS powered by the official Xunlei Download SDK",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "check": "node --check src/server.js && node --check src/thunder-auth.js && node --check src/thunder-sdk.js"
+  },
+  "dependencies": {
+    "@xunlei-open/dlsdk": "^1.0.0",
+    "@xunlei-open/dlsdk-native-linux-x64": "^1.0.0"
+  }
+}
