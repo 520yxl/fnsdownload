@@ -25,7 +25,7 @@ func NewHandler(cfg Config) http.Handler {
 
 func (h *Handler) routes() {
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.2.3", "runtime": "go"})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.2.4", "runtime": "go"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
