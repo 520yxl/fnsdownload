@@ -11,6 +11,8 @@ type Config struct {
 	DownloadDir string
 	UIPath string
 	GatewayPrefix string
+	Aria2RPC string
+	Aria2Secret string
 }
 
 func ConfigFromEnv() Config {
@@ -23,6 +25,8 @@ func ConfigFromEnv() Config {
 		DownloadDir: downloads,
 		UIPath: env("UI_DIR", filepath.Join(appDest, "ui")),
 		GatewayPrefix: "/app/fnsdownload",
+		Aria2RPC: os.Getenv("ARIA2_RPC"),
+		Aria2Secret: os.Getenv("ARIA2_SECRET"),
 	}
 }
 
