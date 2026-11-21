@@ -11,7 +11,7 @@ cd "$ROOT"
 go test ./...
 go vet ./...
 rm -rf "$WORK" "$DIST"
-mkdir -p "$WORK/config" "$WORK/cmd" "$WORK/wizard" "$WORK/i18n" "$WORK/app/bin" "$WORK/app/server" "$WORK/app/ui/assets" "$WORK/app/ui/images" "$DIST"
+mkdir -p "$WORK/config" "$WORK/cmd" "$WORK/wizard" "$WORK/i18n" "$WORK/app/server" "$WORK/app/ui/assets" "$WORK/app/ui/images" "$DIST"
 if [[ -n "$SDK_ROOT" ]]; then
   HEADER="$SDK_ROOT/include/xl_dl/xl_dl_sdk.h"
   LIB="$SDK_ROOT/lib/libdk.so"
@@ -28,7 +28,6 @@ else
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$WORK/app/server/fnsdownload-amd64" ./cmd/fnsdownload
   echo "SDK_BUILD=stub (official SDK not supplied)" > "$DIST/build-info.txt"
 fi
-ln -s ../server/fnsdownload-amd64 "$WORK/app/bin/fnsdownload-amd64"
 cp "$ROOT/internal/app/web/index.html" "$WORK/app/ui/index.html"
 cp -a "$ROOT/internal/app/web/assets/." "$WORK/app/ui/assets/"
 cp "$ROOT/app/ui/config" "$WORK/app/ui/config"
@@ -48,13 +47,14 @@ if [[ "$(id -u)" -eq 0 ]]; then chown -R 0:0 "$WORK/app" "$WORK/config" "$WORK/c
 )
 FPK="$(find "$WORK" -type f -name "*.fpk" -print -quit)"
 if [[ -z "$FPK" ]]; then FPK="$(find "$ROOT" -maxdepth 1 -type f -name "*.fpk" -print -quit)"; fi
-[[ -n "$FPK" ]] || { echo "fnpack reported success but no FPK file was found" >&2; find "$WORK" -maxdepth 3 -type f -printf "%p (%s bytes)\n"; exit 1; }
+[[ -n "$FPK" ]] || { echo "fnpack reported success but no FPK file was found"; find "$WORK" -maxdepth 3 -type f -printf "%p (%s bytes)\n"; exit 1; }
 cp "$FPK" "$DIST/fnsdownload-x86_64.fpk"
 file "$DIST/fnsdownload-x86_64.fpk"
 tar -tzf "$DIST/fnsdownload-x86_64.fpk" > "$DIST/fpk-files.txt"
 APP_TGZ_ENTRY="$(awk '$0 ~ /app[.]tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
-[[ -n "$APP_TGZ_ENTRY" ]] || { echo "FPK is missing app.tgz" >&2; cat "$DIST/fpk-files.txt"; exit 1; }
+[[ -n "$APP_TGZ_ENTRY" ]] || { echo "FPK is missing app.tgz"; cat "$DIST/fpk-files.txt"; exit 1; }
 tar -xOf "$DIST/fnsdownload-x86_64.fpk" "$APP_TGZ_ENTRY" | tar -tzf - > "$DIST/app-files.txt"
-for required in "ui/index.html" "ui/config" "server/fnsdownload-amd64" "ui/assets/app.css" "ui/assets/app.js" "ui/images/icon_0.png" "ui/images/icon_1.png"; do grep -Fxq "$required" "$DIST/app-files.txt" || { echo "Missing package entry: $required" >&2; cat "$DIST/app-files.txt"; exit 1; }; done
+for required in "ui/index.html" "ui/config" "server/fnsdownload-amd64" "ui/assets/app.css" "ui/assets/app.js" "ui/images/icon_0.png" "ui/images/icon_1.png"; do grep -Fxq "$required" "$DIST/app-files.txt" || { echo "Missing package entry: $required"; cat "$DIST/app-files.txt"; exit 1; }; done
+if grep -Eq '(^|/)bin/' "$DIST/app-files.txt"; then echo "Unexpected app/bin directory in app.tgz"; cat "$DIST/app-files.txt"; exit 1; fi
 echo "FPK created: $DIST/fnsdownload-x86_64.fpk"
 echo "Build details: $DIST/build-info.txt"
