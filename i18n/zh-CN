@@ -1,0 +1,7 @@
+[common]
+displayName="MoxYi Download"
+desc="飞牛 fnOS 原生下载器。"
+changelog="0.2.3：采用飞牛统一网关，内置独立前端资源，仅支持 x86_64。"
+[entry]
+title="MoxYi Download"
+desc="打开 MoxYi Download 下载管理界面。"
