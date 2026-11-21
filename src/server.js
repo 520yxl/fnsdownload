@@ -7,7 +7,9 @@ import {ThunderAuthClient} from "./thunder-auth.js";
 import * as sdk from "./thunder-sdk.js";
 const PORT=Number(process.env.PORT||8088), PUBLIC=path.resolve("public"), sessions=new Map();
 let sdkReady=false;
-const makePasswordHash=s=>{const salt=randomBytes(16);const derived=scryptSync(s,salt,64);return salt.toString("hex")+":"+derived.toString("hex");};\nconst verifyPassword=(s,stored)=>{try{const [saltHex,hashHex]=stored.split(":");const expected=Buffer.from(hashHex,"hex"),actual=scryptSync(s,Buffer.from(saltHex,"hex"),64);return expected.length===actual.length&&timingSafeEqual(expected,actual);}catch{return false;}};\nfunction originAllowed(req){const origin=req.headers.origin;if(!origin)return true;try{return new URL(origin).host===req.headers.host;}catch{return false;}}
+const makePasswordHash=s=>{const salt=randomBytes(16);const derived=scryptSync(s,salt,64);return salt.toString("hex")+":"+derived.toString("hex");};
+const verifyPassword=(s,stored)=>{try{const [saltHex,hashHex]=stored.split(":");const expected=Buffer.from(hashHex,"hex"),actual=scryptSync(s,Buffer.from(saltHex,"hex"),64);return expected.length===actual.length&&timingSafeEqual(expected,actual);}catch{return false;}};
+function originAllowed(req){const origin=req.headers.origin;if(!origin)return true;try{return new URL(origin).host===req.headers.host;}catch{return false;}}
 const json=(res,status,data)=>{res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"});res.end(JSON.stringify(data));};
 const cookies=req=>Object.fromEntries((req.headers.cookie||"").split(";").map(x=>x.trim().split("=")).filter(x=>x.length===2));
 const setSession=(res,sid)=>res.setHeader("Set-Cookie","moxyi_session="+sid+"; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200");
