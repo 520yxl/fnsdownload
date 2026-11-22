@@ -145,7 +145,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/HelloFnos"
-          fnpack build
+          fnpack build --nosign
           FPK="$(find . -maxdepth 3 -type f -name '*.fpk' -print -quit)"
           test -n "$FPK"
           mkdir -p "$GITHUB_WORKSPACE/dist-official"
