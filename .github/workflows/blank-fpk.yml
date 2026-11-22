@@ -43,6 +43,9 @@ jobs:
             }
           }
           EOF
+          cat > "$WORK/config/resource" <<'EOF'
+          {}
+          EOF
           cat > "$WORK/app/ui/index.html" <<'EOF'
           <!doctype html>
           <html lang="zh-CN">
