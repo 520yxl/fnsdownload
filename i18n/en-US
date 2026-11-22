@@ -1,0 +1,7 @@
+[common]
+displayName="MoxYi Download"
+desc="Native x86_64 download manager for fnOS."
+changelog="0.2.3: Native x86_64 package with the fnOS unified gateway and bundled desktop UI."
+[entry]
+title="MoxYi Download"
+desc="Open MoxYi Download."

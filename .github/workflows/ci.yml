@@ -1,0 +1,47 @@
+name: Native fnOS FPK
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Resolve Go modules
+        run: go mod tidy
+      - name: Build Vue 3 frontend
+        working-directory: frontend
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+      - name: Install fnpack
+        run: |
+          curl -fL --retry 3 https://static2.fnnas.com/fnpack/fnpack-1.3.3-linux-amd64 -o /usr/local/bin/fnpack
+          chmod +x /usr/local/bin/fnpack
+          fnpack --help
+      - name: Build native x86_64 FPK payload
+        run: bash ./scripts/build-fpk.sh
+      - name: Inspect FPK and payload
+        run: |
+          file dist/fnsdownload-x86_64.fpk
+          cat dist/build-info.txt
+          cat dist/app-files.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fnsdownload-x86_64-${{ github.sha }}
+          path: |
+            dist/fnsdownload-x86_64.fpk
+            dist/build-info.txt
+            dist/fpk-files.txt
+            dist/app-files.txt
+          if-no-files-found: error
+          retention-days: 14

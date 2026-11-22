@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Download files and persistent configuration are intentionally preserved.
+exit 0

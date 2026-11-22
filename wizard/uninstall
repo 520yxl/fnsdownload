@@ -1,0 +1,17 @@
+[
+  {
+    "stepTitle": "卸载选项",
+    "items": [
+      {
+        "type": "select",
+        "field": "wizard_keep_data",
+        "label": "保留下载文件和配置",
+        "initValue": "true",
+        "options": [
+          { "label": "保留数据", "value": "true" },
+          { "label": "删除应用配置（下载文件仍保留）", "value": "false" }
+        ]
+      }
+    ]
+  }
+]

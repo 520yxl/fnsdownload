@@ -1,0 +1,185 @@
+name: Official fnOS HelloFnos compatibility test
+on:
+  push:
+    branches: [develop]
+    paths:
+      - ".github/workflows/blank-fpk.yml"
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install official fnpack
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 https://static2.fnnas.com/fnpack/fnpack-1.3.3-linux-amd64 -o "$RUNNER_TEMP/fnpack"
+          chmod +x "$RUNNER_TEMP/fnpack"
+          "$RUNNER_TEMP/fnpack" --help
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Generate project from official HelloFnos template
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          fnpack create HelloFnos
+          test -d HelloFnos
+          cd HelloFnos
+          echo "=== fnpack-generated tree ==="
+          find . -maxdepth 4 -type f -print | sort
+          echo "=== generated manifest ==="
+          cat manifest
+      - name: Apply exact Quick Start static app example
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/HelloFnos"
+          mkdir -p app/www app/ui/images
+          cat > manifest <<'EOF'
+          appname="HelloFnos"
+          version="1.0.0"
+          display_name="Hello fnOS"
+          desc="A minimal static fnOS application for installation compatibility testing."
+          maintainer="MoxYi"
+          source="thirdparty"
+          platform="all"
+          ctl_stop=false
+          EOF
+          cat > config/privilege <<'EOF'
+          {
+            "defaults": {
+              "run-as": "package"
+            },
+            "username": "hellofnos",
+            "groupname": "hellofnos"
+          }
+          EOF
+          cat > config/resource <<'EOF'
+          {}
+          EOF
+          cat > app/www/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html lang="zh-CN">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Hello fnOS</title>
+          </head>
+          <body>
+            <main>
+              <h1>Hello fnOS</h1>
+              <p>官方快速开始示例结构：静态页面由 index.cgi 提供。</p>
+              <p>此测试包不包含下载器、后台服务、数据库或下载引擎。</p>
+            </main>
+          </body>
+          </html>
+          EOF
+          cat > app/ui/config <<'EOF'
+          {
+            ".url": {
+              "HelloFnos.Application": {
+                "title": "Hello fnOS",
+                "icon": "images/icon_{0}.png",
+                "type": "iframe",
+                "url": "/cgi/ThirdParty/HelloFnos/index.cgi/",
+                "allUsers": true
+              }
+            }
+          }
+          EOF
+          cat > app/ui/index.cgi <<'EOF'
+          #!/bin/bash
+          BASE_PATH="/var/apps/HelloFnos/target/www"
+          URI_NO_QUERY="\${REQUEST_URI%%\?*}"
+          REL_PATH="/"
+          case "$URI_NO_QUERY" in
+            *index.cgi*)
+              REL_PATH="\${URI_NO_QUERY#*index.cgi}"
+              ;;
+          esac
+          if [ -z "$REL_PATH" ] || [ "$REL_PATH" = "/" ]; then
+            REL_PATH="/index.html"
+          fi
+          TARGET_FILE="\${BASE_PATH}\${REL_PATH}"
+          if echo "$TARGET_FILE" | grep -q '\.\.'; then
+            echo "Status: 400 Bad Request"
+            echo "Content-Type: text/plain; charset=utf-8"
+            echo ""
+            echo "Bad Request"
+            exit 0
+          fi
+          if [ ! -f "$TARGET_FILE" ]; then
+            echo "Status: 404 Not Found"
+            echo "Content-Type: text/plain; charset=utf-8"
+            echo ""
+            echo "404 Not Found"
+            exit 0
+          fi
+          case "\${TARGET_FILE##*.}" in
+            html|htm) mime="text/html; charset=utf-8" ;;
+            css) mime="text/css; charset=utf-8" ;;
+            js) mime="application/javascript; charset=utf-8" ;;
+            png) mime="image/png" ;;
+            jpg|jpeg) mime="image/jpeg" ;;
+            svg) mime="image/svg+xml" ;;
+            *) mime="application/octet-stream" ;;
+          esac
+          echo "Content-Type: $mime"
+          echo ""
+          cat "$TARGET_FILE"
+          EOF
+          chmod 755 app/ui/index.cgi
+          cp ../ICON.PNG app/ui/images/icon_64.png
+          cp ../ICON_256.PNG app/ui/images/icon_256.png
+          echo "=== final project tree ==="
+          find . -maxdepth 4 -type f -print | sort
+          echo "=== final manifest ==="
+          cat manifest
+          python3 -c 'import json; json.load(open("config/privilege")); json.load(open("config/resource"))'
+          test -f app/www/index.html
+          test -x app/ui/index.cgi
+          test -f app/ui/config
+      - name: Build using documented fnpack command
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/HelloFnos"
+          fnpack build --nosign
+          FPK="$(find . -maxdepth 3 -type f -name '*.fpk' -print -quit)"
+          test -n "$FPK"
+          mkdir -p "$GITHUB_WORKSPACE/dist-official"
+          cp "$FPK" "$GITHUB_WORKSPACE/dist-official/HelloFnos-1.0.0-all.fpk"
+      - name: Verify package without rewriting it
+        shell: bash
+        run: |
+          set -euo pipefail
+          FPK="$GITHUB_WORKSPACE/dist-official/HelloFnos-1.0.0-all.fpk"
+          file "$FPK"
+          tar -tzf "$FPK" | tee "$GITHUB_WORKSPACE/dist-official/outer-files.txt"
+          python3 - "$FPK" <<'PY'
+          import sys, tarfile, io
+          p=sys.argv[1]
+          with tarfile.open(p, "r:gz") as outer:
+              names=set(n.lstrip("./") for n in outer.getnames())
+              required={"manifest","config/privilege","config/resource","ICON.PNG","ICON_256.PNG","app.tgz"}
+              missing=required-names
+              if missing: raise SystemExit("Missing outer entries: "+", ".join(sorted(missing)))
+              app=next((n for n in outer.getnames() if n.endswith("app.tgz")),None)
+              if not app: raise SystemExit("app.tgz missing")
+              raw=outer.extractfile(app).read()
+          with tarfile.open(fileobj=io.BytesIO(raw),mode="r:gz") as inner:
+              names=set(n.lstrip("./") for n in inner.getnames())
+              required={"www/index.html","ui/config","ui/index.cgi","ui/images/icon_64.png","ui/images/icon_256.png"}
+              missing=required-names
+              if missing: raise SystemExit("Missing app.tgz entries: "+", ".join(sorted(missing)))
+          print("Outer and inner archive checks passed.")
+          PY
+          sha256sum "$FPK" | tee "$GITHUB_WORKSPACE/dist-official/SHA256SUMS.txt"
+          stat -c 'FPK_SIZE=%s' "$FPK" | tee "$GITHUB_WORKSPACE/dist-official/size.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HelloFnos-official-quickstart-fpk
+          path: dist-official/
+          if-no-files-found: error
+          retention-days: 14

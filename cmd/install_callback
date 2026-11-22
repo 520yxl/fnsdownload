@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+fail() {
+  printf '%s\n' "$1" >&2
+  if [[ -n "${TRIM_TEMP_LOGFILE:-}" ]]; then printf '%s\n' "$1" >"$TRIM_TEMP_LOGFILE"; fi
+  exit 1
+}
+: "${TRIM_APPDEST:?TRIM_APPDEST is required}"
+: "${TRIM_PKGVAR:?TRIM_PKGVAR is required}"
+: "${TRIM_USERNAME:?TRIM_USERNAME is required}"
+: "${TRIM_GROUPNAME:?TRIM_GROUPNAME is required}"
+[[ "$(uname -m)" == "x86_64" || "$(uname -m)" == "amd64" ]] || fail "Only x86_64 fnOS supported."
+[[ -x "$TRIM_APPDEST/server/fnsdownload-amd64" ]] || fail "Missing Go service binary."
+[[ -s "$TRIM_APPDEST/www/index.html" ]] || fail "Missing Web UI in target/www."
+mkdir -p "$TRIM_PKGVAR/data/downloads" "$TRIM_PKGVAR/logs"
+if [[ "$(id -u)" -eq 0 ]]; then
+  chown "$TRIM_USERNAME:$TRIM_GROUPNAME" "$TRIM_PKGVAR"
+  chmod 750 "$TRIM_PKGVAR"
+  chown -R "$TRIM_USERNAME:$TRIM_GROUPNAME" "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"
+fi
+chmod 700 "$TRIM_PKGVAR/data" "$TRIM_PKGVAR/logs"
+chmod 750 "$TRIM_PKGVAR/data/downloads"
