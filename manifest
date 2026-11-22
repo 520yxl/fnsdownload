@@ -1,9 +1,11 @@
 appname=fnsdownload
-version=0.5.10
+version=0.5.11
 display_name=MoxYi Download
 desc=Go 多引擎下载器，支持 SQLite 任务持久化与断点续传
 maintainer=MoxYi
 source=thirdparty
 platform=x86
-ctl_stop=false
+desktop_uidir=ui
+desktop_applaunchname=fnsdownload.main
+ctl_stop=true
 checkport=false

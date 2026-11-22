@@ -48,8 +48,8 @@ cp "$ROOT/manifest" "$WORK/manifest"
 cp "$ROOT/config/privilege" "$WORK/config/privilege"
 cp "$ROOT/config/resource" "$WORK/config/resource"
 cp "$ROOT/app/ui/config" "$WORK/app/ui/config"
-cp "$ROOT/app/ui/images/icon_0.png" "$WORK/app/ui/images/icon_0.png"
-cp "$ROOT/app/ui/images/icon_1.png" "$WORK/app/ui/images/icon_1.png"
+cp "$ROOT/app/ui/images/icon_64.png" "$WORK/app/ui/images/icon_64.png"
+cp "$ROOT/app/ui/images/icon_256.png" "$WORK/app/ui/images/icon_256.png"
 
 # The successful HelloFnos package serves web content from target/www.
 # The Go gateway service serves the same directory after StripPrefix.
@@ -97,7 +97,7 @@ tar -tzf "$DIST/fnsdownload-x86_64.fpk" > "$DIST/fpk-files.txt"
 APP_TGZ_ENTRY="$(awk '$0 ~ /app[.]tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
 [[ -n "$APP_TGZ_ENTRY" ]] || { echo "FPK is missing app.tgz"; exit 1; }
 tar -xOf "$DIST/fnsdownload-x86_64.fpk" "$APP_TGZ_ENTRY" | tar -tzf - > "$DIST/app-files.txt"
-for required in "server/fnsdownload-amd64" "www/index.html" "www/assets/app.js" "www/assets/app.css" "ui/config" "ui/images/icon_0.png" "ui/images/icon_1.png"; do
+for required in "server/fnsdownload-amd64" "www/index.html" "www/assets/app.js" "www/assets/app.css" "ui/config" "ui/images/icon_64.png" "ui/images/icon_256.png"; do
   grep -Eq "(^|\\./)$required$" "$DIST/app-files.txt" || { echo "Missing package entry: $required"; cat "$DIST/app-files.txt"; exit 1; }
 done
 for required in "manifest" "config/privilege" "config/resource" "cmd/main" "cmd/install_init" "cmd/install_callback" "wizard/install" "wizard/upgrade" "wizard/uninstall" "wizard/config" "app.tgz"; do
