@@ -5,6 +5,7 @@ set -euo pipefail
 : "${TRIM_USERNAME:?TRIM_USERNAME is required}"
 : "${TRIM_GROUPNAME:?TRIM_GROUPNAME is required}"
 [[ -x "$TRIM_APPDEST/server/fnsdownload-amd64" ]] || exit 1
+[[ -s "$TRIM_APPDEST/www/index.html" ]] || exit 1
 mkdir -p "$TRIM_PKGVAR/data/downloads" "$TRIM_PKGVAR/logs"
 if [[ "$(id -u)" -eq 0 ]]; then
   chown "$TRIM_USERNAME:$TRIM_GROUPNAME" "$TRIM_PKGVAR"

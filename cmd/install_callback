@@ -11,7 +11,7 @@ fail() {
 : "${TRIM_GROUPNAME:?TRIM_GROUPNAME is required}"
 [[ "$(uname -m)" == "x86_64" || "$(uname -m)" == "amd64" ]] || fail "Only x86_64 fnOS supported."
 [[ -x "$TRIM_APPDEST/server/fnsdownload-amd64" ]] || fail "Missing Go service binary."
-[[ -s "$TRIM_APPDEST/ui/index.html" ]] || fail "Missing Web UI."
+[[ -s "$TRIM_APPDEST/www/index.html" ]] || fail "Missing Web UI in target/www."
 mkdir -p "$TRIM_PKGVAR/data/downloads" "$TRIM_PKGVAR/logs"
 if [[ "$(id -u)" -eq 0 ]]; then
   chown "$TRIM_USERNAME:$TRIM_GROUPNAME" "$TRIM_PKGVAR"

@@ -25,7 +25,7 @@ func ConfigFromEnv() Config {
 		DataDir: data,
 		DatabasePath: filepath.Join(data, "tasks.db"),
 		DownloadDir: downloads,
-		UIPath: env("UI_DIR", filepath.Join(appDest, "ui")),
+		UIPath: env("UI_DIR", filepath.Join(appDest, "www")),
 		GatewayPrefix: "/app/fnsdownload",
 		Aria2RPC: os.Getenv("ARIA2_RPC"),
 		Aria2Secret: os.Getenv("ARIA2_SECRET"),

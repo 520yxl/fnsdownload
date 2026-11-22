@@ -23,11 +23,11 @@ case "${1:-}" in
     if is_running && [[ -S "$SOCKET" ]]; then exit 0; fi
     rm -f "$PID_FILE" "$SOCKET"
     [[ -x "$BIN" ]] || { report_error "Missing service binary: $BIN"; exit 1; }
-    [[ -s "$APP_DEST/ui/index.html" ]] || { report_error "Missing UI: $APP_DEST/ui/index.html"; exit 1; }
+    [[ -s "$APP_DEST/www/index.html" ]] || { report_error "Missing UI: $APP_DEST/www/index.html"; exit 1; }
     [[ -w "$APP_DEST" ]] || { report_error "Cannot write gateway socket in $APP_DEST"; exit 1; }
     export DATA_DIR="$PKGVAR/data"
     export DOWNLOAD_DIR="$PKGVAR/data/downloads"
-    export UI_DIR="$APP_DEST/ui"
+    export UI_DIR="$APP_DEST/www"
     export HOME="${TRIM_PKGHOME:-$PKGVAR}"
     export TRIM_APPDEST TRIM_PKGVAR
     nohup "$BIN" >>"$LOG_FILE" 2>&1 </dev/null &
