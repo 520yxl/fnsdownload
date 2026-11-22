@@ -15,7 +15,7 @@ func TestConfigFromEnvUsesTargetDirectoryForGatewaySocket(t *testing.T) {
 	if cfg.SocketPath != wantSocket {
 		t.Fatalf("SocketPath = %q, want %q", cfg.SocketPath, wantSocket)
 	}
-	if cfg.UIPath != filepath.Join("/var/apps/fnsdownload/target", "ui") {
+	if cfg.UIPath != filepath.Join("/var/apps/fnsdownload/target", "www") {
 		t.Fatalf("UIPath = %q", cfg.UIPath)
 	}
 	if cfg.DataDir != filepath.Join("/var/apps/fnsdownload/var", "data") {
