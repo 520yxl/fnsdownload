@@ -20,20 +20,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          WORK="$RUNNER_TEMP/moxyiblanktest"
+          WORK="$RUNNER_TEMP/hellofnos"
           mkdir -p "$WORK/app/ui/images" "$WORK/cmd" "$WORK/config" "$WORK/wizard"
           cat > "$WORK/manifest" <<'EOF'
-          appname=moxyiblanktest
+          appname=hellofnos
           version=1.0.0
-          display_name=MoxYi Blank Install Test
-          desc=Minimal fnOS package used only to verify installation
+          display_name=Hello fnOS Install Test
+          desc=Minimal fnOS static app used to verify package compatibility
           source=thirdparty
-          platform=x86
+          platform=all
           maintainer=MoxYi
           distributor=MoxYi
           os_min_version=1.2.0
           ctl_stop=false
           checkport=false
+          desktop_uidir=ui
+          desktop_applaunchname=HelloFnos.Application
           disable_authorization_path=true
           EOF
           cat > "$WORK/config/privilege" <<'EOF'
@@ -64,11 +66,22 @@ jobs:
           EOF
           cat > "$WORK/app/ui/config" <<'EOF'
           {
-            ".url": {}
+            ".url": {
+              "HelloFnos.Application": {
+                "title": "Hello fnOS",
+                "desc": "最小化安装验证应用",
+                "icon": "images/icon_{0}.png",
+                "type": "iframe",
+                "url": "/",
+                "width": 800,
+                "height": 600,
+                "allUsers": true
+              }
+            }
           }
           EOF
-          cp ICON.PNG "$WORK/app/ui/images/icon_64.png"
-          cp ICON_256.PNG "$WORK/app/ui/images/icon_256.png"
+          cp ICON.PNG "$WORK/app/ui/images/icon_0.png"
+          cp ICON_256.PNG "$WORK/app/ui/images/icon_1.png"
           for name in install upgrade uninstall config; do printf '[]\n' > "$WORK/wizard/$name"; done
           for name in install_init install_callback upgrade_init upgrade_callback uninstall_init uninstall_callback config_init config_callback; do
             printf '#!/usr/bin/env bash\nset -e\nexit 0\n' > "$WORK/cmd/$name"
@@ -95,7 +108,7 @@ jobs:
           FPK="$(find "$WORK" -maxdepth 3 -type f -name '*.fpk' -print -quit)"
           test -n "$FPK"
           mkdir -p "$GITHUB_WORKSPACE/dist-blank"
-          cp "$FPK" "$GITHUB_WORKSPACE/dist-blank/MoxYi-Blank-Install-Test-x86.fpk"
+          cp "$FPK" "$GITHUB_WORKSPACE/dist-blank/Hello-fnOS-Install-Test-all.fpk"
       - name: Verify FPK structure without modifying the package
         run: |
           set -euo pipefail
@@ -113,7 +126,7 @@ jobs:
           stat -c 'FPK_SIZE=%s' "$FPK" | tee dist-blank/size.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: moxyiblanktest-x86-fpk
+          name: hellofnos-install-test-fpk
           path: dist-blank/
           if-no-files-found: error
           retention-days: 14
