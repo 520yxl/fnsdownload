@@ -74,7 +74,7 @@ jobs:
           EOF
           cp ICON.PNG ICON_256.PNG "$WORK/"
           chmod 755 "$WORK/cmd/"*
-          chown -R 0:0 "$WORK"
+          sudo chown -R 0:0 "$WORK"
           echo "$WORK" > "$RUNNER_TEMP/blank-fpk-work"
       - name: Build using official fnpack
         run: |
