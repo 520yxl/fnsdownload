@@ -19,7 +19,12 @@ for wizard_file in install upgrade uninstall config; do
   [[ -s "$path" ]] || { echo "Missing wizard file: $path" >&2; exit 1; }
   jq -e 'type == "array" and all(.[]; (.stepTitle | type == "string") and (.items | type == "array"))' "$path" >/dev/null || { echo "Invalid fnOS wizard JSON/schema: $path" >&2; exit 1; }
 done
-jq -e 'has(".url") and (.".url" | has("fnsdownload.main"))' "$ROOT/app/ui/config" >/dev/null
+jq -e 'has(".url") and (.".url" | has("fnsdownload.main")) and (.".url"."fnsdownload.main".gatewayPrefix == "/app/fnsdownload") and (.".url"."fnsdownload.main".gatewaySocket == "app.sock") and (.".url"."fnsdownload.main".url == "/app/fnsdownload/") and (.".url"."fnsdownload.main".icon == "images/icon_{0}.png")' "$ROOT/app/ui/config" >/dev/null
+grep -Fxq 'desktop_uidir=ui' "$ROOT/manifest" || { echo "manifest must set desktop_uidir=ui"; exit 1; }
+grep -Fxq 'desktop_applaunchname=fnsdownload.main' "$ROOT/manifest" || { echo "manifest desktop_applaunchname must match app/ui/config entry ID"; exit 1; }
+for icon in icon_64.png icon_256.png; do
+  [[ -s "$ROOT/app/ui/images/$icon" ]] || { echo "Missing entry icon: $icon"; exit 1; }
+done
 
 # Build the Vue frontend first. Vite emits assets under /app/fnsdownload/.
 (
@@ -30,6 +35,8 @@ jq -e 'has(".url") and (.".url" | has("fnsdownload.main"))' "$ROOT/app/ui/config
 [[ -s "$ROOT/internal/app/web/index.html" ]] || { echo "Vue build did not produce index.html" >&2; exit 1; }
 [[ -s "$ROOT/internal/app/web/assets/app.js" ]] || { echo "Vue build did not produce assets/app.js" >&2; exit 1; }
 [[ -s "$ROOT/internal/app/web/assets/app.css" ]] || { echo "Vue build did not produce assets/app.css" >&2; exit 1; }
+grep -q '/app/fnsdownload/assets/app.js' "$ROOT/internal/app/web/index.html" || { echo "Frontend JS URL is outside the fnOS gateway prefix"; exit 1; }
+grep -q '/app/fnsdownload/assets/app.css' "$ROOT/internal/app/web/index.html" || { echo "Frontend CSS URL is outside the fnOS gateway prefix"; exit 1; }
 
 rm -rf "$WORK_ROOT" "$DIST"
 mkdir -p "$WORK_ROOT" "$DIST"
