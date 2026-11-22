@@ -35,7 +35,7 @@ jobs:
           ctl_stop=false
           checkport=false
           desktop_uidir=ui
-          desktop_applaunchname=HelloFnos.Application
+          desktop_applaunchname=hellofnos.Application
           disable_authorization_path=true
           EOF
           cat > "$WORK/config/privilege" <<'EOF'
@@ -67,7 +67,7 @@ jobs:
           cat > "$WORK/app/ui/config" <<'EOF'
           {
             ".url": {
-              "HelloFnos.Application": {
+              "hellofnos.Application": {
                 "title": "Hello fnOS",
                 "desc": "最小化安装验证应用",
                 "icon": "images/icon_{0}.png",
