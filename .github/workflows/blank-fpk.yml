@@ -112,7 +112,8 @@ jobs:
       - name: Verify FPK structure without modifying the package
         run: |
           set -euo pipefail
-          FPK="dist-blank/MoxYi-Blank-Install-Test-x86.fpk"
+          FPK="$(find dist-blank -maxdepth 1 -type f -name '*.fpk' -print -quit)"
+          test -n "$FPK"
           file "$FPK"
           tar -tzf "$FPK" | tee dist-blank/outer-files.txt
           for item in manifest cmd/main cmd/install_init cmd/install_callback config/privilege wizard/install wizard/upgrade wizard/uninstall wizard/config ICON.PNG ICON_256.PNG app.tgz; do
