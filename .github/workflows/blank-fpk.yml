@@ -20,33 +20,41 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          WORK="$RUNNER_TEMP/hellofnos"
-          mkdir -p "$WORK/app/ui/images" "$WORK/cmd" "$WORK/config" "$WORK/wizard"
+          WORK="$RUNNER_TEMP/fnsdownload"
+          mkdir -p "$WORK/app/ui/images" "$WORK/cmd" "$WORK/config" "$WORK/wizard" "$WORK/i18n"
           cat > "$WORK/manifest" <<'EOF'
-          appname=hellofnos
-          version=1.0.0
-          display_name=Hello fnOS Install Test
-          desc=Minimal fnOS static app used to verify package compatibility
+          appname=fnsdownload
+          version=0.5.8
+          display_name=MoxYi Download Compatibility Test
+          desc=Minimal static package based on the previously installable MoxYi Download manifest
           source=thirdparty
-          platform=all
+          platform=x86
           maintainer=MoxYi
           distributor=MoxYi
           os_min_version=1.2.0
-          ctl_stop=false
-          checkport=false
           desktop_uidir=ui
-          desktop_applaunchname=hellofnos.Application
-          disable_authorization_path=true
+          desktop_applaunchname=fnsdownload.Application
+          ctl_stop=true
+          checkport=false
+          disable_authorization_path=false
           EOF
           cat > "$WORK/config/privilege" <<'EOF'
           {
             "defaults": {
               "run-as": "package"
-            }
+            },
+            "username": "fnsdownload",
+            "groupname": "fnsdownload"
           }
           EOF
           cat > "$WORK/config/resource" <<'EOF'
-          {}
+          {
+            "data-share": {
+              "shares": [
+                { "name": "fnsdownload/downloads" }
+              ]
+            }
+          }
           EOF
           cat > "$WORK/app/ui/index.html" <<'EOF'
           <!doctype html>
@@ -67,21 +75,38 @@ jobs:
           cat > "$WORK/app/ui/config" <<'EOF'
           {
             ".url": {
-              "hellofnos.Application": {
-                "title": "Hello fnOS",
-                "desc": "最小化安装验证应用",
+              "fnsdownload.Application": {
+                "title": "MoxYi Download Compatibility Test",
+                "desc": "Minimal static install test",
                 "icon": "images/icon_{0}.png",
                 "type": "iframe",
-                "url": "/",
-                "width": 800,
-                "height": 600,
-                "allUsers": true
+                "protocol": "http",
+                "gatewaySocket": "app.sock",
+                "gatewayPrefix": "/app/fnsdownload",
+                "url": "/app/fnsdownload",
+                "width": 1280,
+                "height": 820,
+                "allUsers": false,
+                "control": {
+                  "accessPerm": "readonly",
+                  "fullUrlPerm": "readonly",
+                  "portPerm": "readonly",
+                  "pathPerm": "readonly"
+                }
               }
             }
           }
           EOF
           cp ICON.PNG "$WORK/app/ui/images/icon_0.png"
           cp ICON_256.PNG "$WORK/app/ui/images/icon_1.png"
+          printf '{
+  "common": {
+    "desc": "Minimal compatibility test",
+    "displayName": "MoxYi Download Compatibility Test",
+    "changelog": "Compatibility test build"
+  }
+}\n' > "$WORK/i18n/en-US"
+          cp "$WORK/i18n/en-US" "$WORK/i18n/zh-CN"
           for name in install upgrade uninstall config; do printf '[]\n' > "$WORK/wizard/$name"; done
           for name in install_init install_callback upgrade_init upgrade_callback uninstall_init uninstall_callback config_init config_callback; do
             printf '#!/usr/bin/env bash\nset -e\nexit 0\n' > "$WORK/cmd/$name"
@@ -108,7 +133,7 @@ jobs:
           FPK="$(find "$WORK" -maxdepth 3 -type f -name '*.fpk' -print -quit)"
           test -n "$FPK"
           mkdir -p "$GITHUB_WORKSPACE/dist-blank"
-          cp "$FPK" "$GITHUB_WORKSPACE/dist-blank/Hello-fnOS-Install-Test-all.fpk"
+          cp "$FPK" "$GITHUB_WORKSPACE/dist-blank/MoxYi-Download-Compatibility-Test-x86.fpk"
       - name: Verify FPK structure without modifying the package
         run: |
           set -euo pipefail
@@ -127,7 +152,7 @@ jobs:
           stat -c 'FPK_SIZE=%s' "$FPK" | tee dist-blank/size.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: hellofnos-install-test-fpk
+          name: fnsdownload-install-test-fpk
           path: dist-blank/
           if-no-files-found: error
           retention-days: 14
