@@ -85,7 +85,13 @@ for lifecycle in main install_init install_callback upgrade_init upgrade_callbac
   chmod 755 "$WORK/cmd/$lifecycle"
 done
 for wizard_file in install upgrade uninstall config; do
-  cp "$ROOT/wizard/$wizard_file" "$WORK/wizard/$wizard_file"
+  # fnOS 1.2.1102 install-info crashes when wizard/install contains [].
+  # Omit unused wizard files instead of declaring an empty wizard.
+  if jq -e 'length > 0' "$ROOT/wizard/$wizard_file" >/dev/null; then
+    cp "$ROOT/wizard/$wizard_file" "$WORK/wizard/$wizard_file"
+  else
+    rm -f "$WORK/wizard/$wizard_file"
+  fi
 done
 cp -a "$ROOT/i18n/." "$WORK/i18n/"
 cp "$ROOT/ICON.PNG" "$WORK/ICON.PNG"
@@ -103,7 +109,7 @@ cp "$FPK" "$DIST/fnsdownload-x86_64.fpk"
 file "$DIST/fnsdownload-x86_64.fpk"
 tar -tzf "$DIST/fnsdownload-x86_64.fpk" > "$DIST/fpk-files.txt"
 python3 - "$DIST/fnsdownload-x86_64.fpk" <<'PY'
-import sys, tarfile
+import json, sys, tarfile
 with tarfile.open(sys.argv[1], "r:gz") as archive:
     entries = {entry.name.removeprefix("./"): entry for entry in archive}
     for name in ("main", "install_init", "install_callback", "upgrade_init", "upgrade_callback",
@@ -114,6 +120,10 @@ with tarfile.open(sys.argv[1], "r:gz") as archive:
         content = archive.extractfile(entry).read()
         if not content.startswith(b"#!/") or b"\r" in content:
             raise SystemExit("Lifecycle script requires a shebang and Unix line endings: cmd/" + name)
+    for name, entry in entries.items():
+        if name.startswith("wizard/") and entry.isfile():
+            if not json.load(archive.extractfile(entry)):
+                raise SystemExit("Empty wizard must be omitted from FPK: " + name)
 print("FPK lifecycle script permissions and line endings passed")
 PY
 APP_TGZ_ENTRY="$(awk '$0 ~ /app[.]tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
@@ -122,7 +132,7 @@ tar -xOf "$DIST/fnsdownload-x86_64.fpk" "$APP_TGZ_ENTRY" | tar -tzf - > "$DIST/a
 for required in "server/fnsdownload-amd64" "www/index.html" "www/assets/app.js" "www/assets/app.css" "ui/config" "ui/images/icon_64.png" "ui/images/icon_256.png"; do
   grep -Eq "(^|\\./)$required$" "$DIST/app-files.txt" || { echo "Missing package entry: $required"; cat "$DIST/app-files.txt"; exit 1; }
 done
-for required in "manifest" "config/privilege" "config/resource" "cmd/main" "cmd/install_init" "cmd/install_callback" "wizard/install" "wizard/upgrade" "wizard/uninstall" "wizard/config" "app.tgz"; do
+for required in "manifest" "config/privilege" "config/resource" "cmd/main" "cmd/install_init" "cmd/install_callback" "wizard/uninstall" "app.tgz"; do
   grep -Eq "(^|\\./)$required$" "$DIST/fpk-files.txt" || { echo "Missing outer FPK entry: $required"; cat "$DIST/fpk-files.txt"; exit 1; }
 done
 if grep -Eq '(^|/)bin/' "$DIST/app-files.txt"; then echo "Unexpected app/bin directory"; exit 1; fi
