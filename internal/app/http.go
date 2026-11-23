@@ -132,7 +132,7 @@ func (h *Handler) Close() error {
 func (h *Handler) routes() {
 	h.xunleiRoutes()
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.19", "runtime": "go", "database": "sqlite"})
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.20", "runtime": "go", "database": "sqlite"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"download_dir": filepath.Clean(h.cfg.DownloadDir), "data_dir": filepath.Clean(h.cfg.DataDir), "database": "sqlite"})
@@ -218,12 +218,16 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "invalid JSON body")
 		return
 	}
-	if input.Engine == "" {
-		input.Engine = "http"
-	}
 	if err := xunleiengine.ValidateHeaders(input.Headers); err != nil {
 		writeError(w, 400, err.Error())
 		return
+	}
+	if input.Engine == "" || input.Engine == "auto" {
+		input.Engine = h.autoEngine(r.Context(), len(input.Headers) > 0)
+		if input.Engine == "" {
+			writeError(w, 503, "当前没有满足任务要求的可用下载引擎")
+			return
+		}
 	}
 	if len(input.Headers) > 0 && input.Engine != "xunlei" {
 		writeError(w, 400, "自定义请求头目前仅适用于迅雷引擎")

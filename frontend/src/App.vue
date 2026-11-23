@@ -39,18 +39,17 @@ const error = ref('')
 const connected = ref(false)
 const search = ref('')
 const url = ref('')
-const engineName = ref('http')
+const engineName = computed(() => ['xunlei','http'].find(name => engines.value.some(e => e.name === name && e.ready)) || '')
 const directory = ref('')
-type Preferences = { engine: string; directory: string; interval: number }
+type Preferences = { directory: string; interval: number }
 function readPreferences(): Preferences {
   try {
     const value = JSON.parse(localStorage.getItem('moxyi-downloader-settings') || '{}')
-    return {engine: ['http','xunlei','aria2'].includes(value.engine) ? value.engine : 'http', directory: typeof value.directory === 'string' ? value.directory : '', interval: [2500,5000,10000].includes(value.interval) ? value.interval : 2500}
-  } catch { return {engine:'http',directory:'',interval:2500} }
+    return {directory: typeof value.directory === 'string' ? value.directory : '', interval: [2500,5000,10000].includes(value.interval) ? value.interval : 2500}
+  } catch { return {directory:'',interval:2500} }
 }
 const preferences = ref<Preferences>(readPreferences())
 const settingsDraft = ref<Preferences>({...preferences.value})
-const settingsDialog = ref<HTMLDialogElement | null>(null)
 const settingsError = ref('')
 const settingsPicking = ref(false)
 type XunleiOptions = {concurrent:number; download_kb:number; upload_kb:number; upload:boolean; dynamic_acceleration:boolean}
@@ -94,7 +93,7 @@ async function chooseDirectory(forSettings = false) {
       }, {target:'_blank',features:'width=750,height=630'})
     } else {
       // The host picker must appear above the native create dialog.
-      const pickerParent = forSettings ? settingsDialog.value : createDialog.value
+      const pickerParent = forSettings ? null : createDialog.value
       pickerParent?.close()
       try {
         const result = await fnos.pickUserFile({directory:true,title:'选择下载保存目录',okText:'保存到此目录',creatable:true,sidebarGroup:['myFiles','otherShare','favorites']})
@@ -130,7 +129,6 @@ function openCreate() {
   createError.value = ''
   requestHeaders.value = ''
   directory.value = preferences.value.directory
-  engineName.value = engines.value.some(e => e.name === preferences.value.engine && e.ready) ? preferences.value.engine : (engines.value.find(e => e.ready)?.name || preferences.value.engine)
   createDialog.value?.showModal()
 }
 async function openSettings() {
@@ -138,7 +136,7 @@ async function openSettings() {
   settingsError.value = ''
   directoryError.value = ''
   sdkSettingsLoaded.value = false
-  settingsDialog.value?.showModal()
+  filter.value = 'settings'
   try {
     const result = await api('/api/xunlei/settings')
     xunleiOptions.value = result.options
@@ -155,7 +153,6 @@ async function saveSettings() {
     localStorage.setItem('moxyi-downloader-settings', JSON.stringify(settingsDraft.value))
     preferences.value = {...settingsDraft.value}
     scheduleRefresh()
-    settingsDialog.value?.close()
     notify('下载器设置已保存')
   } catch (e) { settingsError.value = e instanceof Error ? e.message : '无法保存设置' }
   finally { savingSettings.value = false }
@@ -249,10 +246,6 @@ async function refresh(silent = false) {
     if (JSON.stringify(engines.value) !== JSON.stringify(engineData)) engines.value = engineData
     if (JSON.stringify(tasks.value) !== JSON.stringify(taskData)) tasks.value = taskData
     connected.value = true
-    if (!engines.value.some(e => e.name === engineName.value && e.ready)) {
-      const available = engines.value.find(e => e.ready)
-      if (available) engineName.value = available.name
-    }
     error.value = ''
   } catch (e) { connected.value = false; error.value = e instanceof Error ? e.message : '无法连接下载服务' }
   finally { loading.value = false; refreshing = false; scheduleRefresh() }
@@ -263,7 +256,7 @@ async function addTask() {
   let headers: Record<string,string> = {}
   try {
     for (const link of links) { const parsed = new URL(link); if (!['http:','https:'].includes(parsed.protocol)) throw new Error('请输入有效的 HTTP 或 HTTPS 下载链接。') }
-    if (links.length > 1 && engineName.value !== 'xunlei') throw new Error('批量下载请选择迅雷引擎。')
+    if (links.length > 1 && engineName.value !== 'xunlei') throw new Error('迅雷引擎暂不可用，暂时无法创建批量任务。')
     if (links.length > 1000) throw new Error('一次最多添加 1000 个链接。')
     for (const line of requestHeaders.value.split(/\r?\n/).filter(v => v.trim())) {
       const index = line.indexOf(':'); if (index < 1) throw new Error('请求头格式应为 名称: 值')
@@ -275,7 +268,7 @@ async function addTask() {
   createError.value = ''
   try {
     if (links.length > 1) await api('/api/xunlei/batch',{method:'POST',body:JSON.stringify({urls:links,name:batchName.value,directory:directory.value.trim(),concurrent:batchConcurrent.value})})
-    else await api('/api/tasks', { method: 'POST', body: JSON.stringify({ engine: engineName.value, url: links[0], directory: directory.value.trim(), headers:engineName.value==='xunlei' ? headers : {} }) })
+    else await api('/api/tasks', { method: 'POST', body: JSON.stringify({ engine: 'auto', url: links[0], directory: directory.value.trim(), headers:engineName.value==='xunlei' ? headers : {} }) })
     url.value = ''
     filter.value = 'all'
     search.value = ''
@@ -320,26 +313,11 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
           <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="item.path" /></svg>
           <span>{{ item.label }}</span><small :class="{nonzero:taskCount(item.id)>0}">{{ taskCount(item.id) }}</small>
         </button>
-        <button @click="openSettings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6" /></svg><span>下载器设置</span></button>
+        <button @click="openSettings" :class="{selected:filter==='settings'}" :aria-current="filter==='settings' ? 'page' : undefined"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6" /></svg><span>设置</span></button>
       </nav>
-      <div class="sidebar-bottom">
-        <div class="nav-caption">下载引擎 <span>{{ engines.filter(e => e.ready).length }} 可用</span></div>
-        <div v-for="item in engines" :key="item.name" class="engine-item" :title="item.error || '引擎可用'">
-          <span class="engine-symbol">{{ item.name.slice(0,1).toUpperCase() }}</span>
-          <span class="engine-name">{{ item.name === 'http' ? 'HTTP / HTTPS' : item.name === 'xunlei' ? '迅雷下载引擎' : item.name }}</span>
-          <span class="engine-dot" :class="{ready:item.ready}" :aria-label="item.ready ? '可用' : '未连接'"></span>
-        </div>
-        <p v-if="!engines.length" class="engine-placeholder">{{ loading ? '正在检测引擎…' : '暂无引擎信息' }}</p>
-      </div>
     </aside>
   <main class="shell">
-    <header class="topbar">
-      <div class="breadcrumb">下载管理 <span>/</span><strong>{{ currentSection }}</strong></div>
-      <div class="top-actions">
-
-        <button class="icon-button" @click="refresh()" :disabled="loading" title="刷新任务" aria-label="刷新任务"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" /></svg></button></div>
-    </header>
-
+    <template v-if="filter!=='settings'">
     <section class="welcome">
       <div><div class="eyebrow">YOUR DOWNLOADS, ORGANIZED</div><h1>{{ currentSection }}<span class="heading-count">{{ taskCount(filter) }}</span></h1><p>管理每一次传输，让文件各就其位。</p></div>
       <button class="new-task-link" @click="openCreate">＋ 新建下载</button>
@@ -374,31 +352,12 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
       </div>
       <div v-else class="empty-state" aria-live="polite"><div><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" /></svg></div><strong>{{ !connected ? (loading ? '正在加载任务' : '暂时无法获取任务') : search.trim() ? '没有找到匹配的任务' : filter==='all' ? '从一个链接开始' : '这里还没有'+currentSection+'的任务' }}</strong><span>{{ !connected ? '连接下载服务后，任务会显示在这里' : search.trim() ? '试试其他文件名，或清空搜索条件' : filter==='all' ? '新建下载任务，将文件保存到你的 NAS' : '切换到全部任务，查看其他下载记录' }}</span><button v-if="connected && (filter!=='all' || search.trim())" class="text-button" @click="filter='all';search=''">查看全部任务 →</button><button v-else-if="connected" class="text-button" @click="openCreate">添加第一个下载 →</button></div>
     </section>
-    <footer> MoxYi Download <span>·</span> fnOS 原生应用 <span>·</span> 多引擎下载管理</footer>
-  </main>
-  <dialog ref="createDialog" class="modal create-modal" aria-labelledby="create-title" @cancel="cancelWhileBusy($event, submitting)">
-    <div class="modal-header"><div><span class="modal-eyebrow">NEW DOWNLOAD</span><h2 id="create-title">新建下载</h2><p>添加链接，其余交给下载器。</p></div><button class="close-button" @click="createDialog?.close()" :disabled="submitting" aria-label="关闭新建下载">×</button></div>
-    <form @submit.prevent="addTask" :aria-busy="submitting">
-      <div class="modal-body create-form">
-        <label class="url-field"><span>下载链接</span><textarea id="download-url" v-model="url" placeholder="粘贴 HTTP / HTTPS 下载地址" required autofocus :disabled="submitting" rows="3"></textarea><small>每行一个 HTTP / HTTPS 链接；多个链接使用迅雷批量任务。</small></label>
-        <label><span>下载引擎</span><select v-model="engineName" :disabled="submitting"><option v-for="item in engines.filter(e => e.ready)" :key="item.name" :value="item.name">{{ item.name === 'http' ? 'HTTP / HTTPS' : item.name === 'xunlei' ? '迅雷下载引擎' : item.name }}</option></select></label>
-        <template v-if="engineName==='xunlei'">
-          <label><span>批量任务名称（可选）</span><input v-model="batchName" maxlength="255" :disabled="submitting" placeholder="多个链接时使用" /></label>
-          <label><span>批量任务内并发数</span><input v-model.number="batchConcurrent" type="number" min="1" max="100" :disabled="submitting" /></label>
-          <label><span>自定义 HTTP 请求头（单文件任务）</span><textarea v-model="requestHeaders" rows="2" :disabled="submitting" placeholder="Referer: https://example.com/" /><small>每行一个 名称: 值。请求头不保存到应用数据库。</small></label>
-        </template>
-        <div class="directory-field"><span>保存目录</span><div class="directory-controls"><input aria-label="保存目录" :value="directory || '默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory()" :disabled="submitting || pickingDirectory">{{ pickingDirectory ? '正在打开…' : '选择目录' }}</button><button v-if="directory" type="button" class="secondary-button" @click="directory=''" :disabled="submitting">重置</button></div><small>通过飞牛选择并授权 NAS 目录，未选择时使用默认目录。</small><p v-if="directoryError" role="alert" class="error-banner">{{ directoryError }}</p></div>
-        <div v-if="createError" class="error-box form-message" role="alert">{{ createError }}</div>
-        <p v-if="!engines.some(e => e.ready)" class="hint form-message">当前没有可用引擎，请稍后重试。</p>
-      </div>
-      <div class="modal-footer"><span>文件保存在你的 NAS</span><button class="secondary-button" type="button" @click="createDialog?.close()" :disabled="submitting">取消</button><button class="primary-button" type="submit" :disabled="submitting || !url.trim() || !engines.some(e => e.name === engineName && e.ready)">{{ submitting ? '正在创建…' : '开始下载' }}</button></div>
-    </form>
-  </dialog>
-  <dialog ref="settingsDialog" class="modal create-modal" aria-labelledby="settings-title">
-    <div class="modal-header"><div><span class="modal-eyebrow">SETTINGS</span><h2 id="settings-title">下载器设置</h2><p>设置新任务的默认选项。</p></div><button class="close-button" @click="settingsDialog?.close()" aria-label="关闭下载器设置">×</button></div>
+    </template>
+    <section v-else class="settings-page" aria-labelledby="settings-title">
+      <div class="welcome"><div><div class="eyebrow">SETTINGS</div><h1 id="settings-title">设置</h1><p>管理下载偏好与迅雷引擎。</p></div></div>
+      <div class="panel settings-panel">
     <form @submit.prevent="saveSettings" :aria-busy="savingSettings">
-      <div class="modal-body create-form">
-        <label><span>默认下载引擎</span><select v-model="settingsDraft.engine"><option value="http">HTTP / HTTPS</option><option value="xunlei">迅雷下载引擎</option><option v-if="engines.some(e => e.name==='aria2')" value="aria2">Aria2</option></select><small>引擎不可用时，新建任务会选择其他可用引擎。</small></label>
+      <div class="settings-body create-form">
         <div class="directory-field"><span>默认保存目录</span><div class="directory-controls"><input aria-label="默认保存目录" :value="settingsDraft.directory || '应用默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory(true)" :disabled="pickingDirectory">选择目录</button><button v-if="settingsDraft.directory" type="button" class="secondary-button" @click="settingsDraft.directory=''">重置</button></div><p v-if="directoryError" class="error-banner" role="alert">{{ directoryError }}</p></div>
         <label><span>下载进度同步间隔</span><select v-model.number="settingsDraft.interval"><option :value="2500">2.5 秒</option><option :value="5000">5 秒</option><option :value="10000">10 秒</option></select><small>仅有下载中或等待中的任务时同步，页面隐藏时暂停。</small></label>
         <fieldset v-if="sdkSettingsLoaded" class="sdk-settings" :disabled="savingSettings || recovering">
@@ -409,13 +368,34 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
           <label class="check-setting"><input v-model="xunleiOptions.upload" type="checkbox" /><span>允许 P2P 上传（消耗 NAS 上行带宽）</span></label>
           <label class="check-setting"><input v-model="xunleiOptions.dynamic_acceleration" type="checkbox" /><span>动态链接 P2SP 加速</span></label>
           <small>动态链接加速存在极低概率的文件不一致风险，重要文件请校验完整性。</small>
-          <button type="button" class="secondary-button" @click="recoverSDKTasks" :disabled="recovering">{{ recovering ? '正在恢复…' : '恢复 SDK 中的任务记录' }}</button>
+          <button type="button" class="secondary-button" @click="recoverSDKTasks" :disabled="recovering">{{ recovering ? '处理中…' : '重置' }}</button>
           <small>未完成任务恢复为暂停，不会自动开始下载。</small>
         </fieldset>
-        <p class="hint">迅雷设置保存在 NAS 并立即生效；默认引擎、目录和同步间隔保存在当前浏览器。</p>
+        <p class="hint">迅雷设置保存在 NAS 并立即生效；默认目录和同步间隔保存在当前浏览器。</p>
         <div v-if="settingsError" class="error-box" role="alert">{{ settingsError }}</div>
       </div>
-      <div class="modal-footer"><button type="button" class="secondary-button" @click="settingsDialog?.close()">取消</button><button type="submit" class="primary-button" :disabled="pickingDirectory || savingSettings || recovering">{{ savingSettings ? '正在保存…' : '保存设置' }}</button></div>
+      <div class="settings-actions"><button type="button" class="secondary-button" @click="openSettings" :disabled="savingSettings || recovering || pickingDirectory">重置更改</button><button type="submit" class="primary-button" :disabled="pickingDirectory || savingSettings || recovering">{{ savingSettings ? '正在保存…' : '保存设置' }}</button></div>
+    </form>
+      </div>
+    </section>
+    <footer> MoxYi Download <span>·</span> fnOS 原生应用 <span>·</span> 多引擎下载管理</footer>
+  </main>
+  <dialog ref="createDialog" class="modal create-modal" aria-labelledby="create-title" @cancel="cancelWhileBusy($event, submitting)">
+    <div class="modal-header"><div><span class="modal-eyebrow">NEW DOWNLOAD</span><h2 id="create-title">新建下载</h2><p>添加链接，其余交给下载器。</p></div><button class="close-button" @click="createDialog?.close()" :disabled="submitting" aria-label="关闭新建下载">×</button></div>
+    <form @submit.prevent="addTask" :aria-busy="submitting">
+      <div class="modal-body create-form">
+        <label class="url-field"><span>下载链接</span><textarea id="download-url" v-model="url" placeholder="粘贴 HTTP / HTTPS 下载地址" required autofocus :disabled="submitting" rows="3"></textarea><small>每行一个 HTTP / HTTPS 链接；多个链接使用迅雷批量任务。</small></label>
+        <p class="hint form-message">自动选择可用引擎，优先使用迅雷。</p>
+        <template v-if="engineName==='xunlei'">
+          <label><span>批量任务名称（可选）</span><input v-model="batchName" maxlength="255" :disabled="submitting" placeholder="多个链接时使用" /></label>
+          <label><span>批量任务内并发数</span><input v-model.number="batchConcurrent" type="number" min="1" max="100" :disabled="submitting" /></label>
+          <label><span>自定义 HTTP 请求头（单文件任务）</span><textarea v-model="requestHeaders" rows="2" :disabled="submitting" placeholder="Referer: https://example.com/" /><small>每行一个 名称: 值。请求头不保存到应用数据库。</small></label>
+        </template>
+        <div class="directory-field"><span>保存目录</span><div class="directory-controls"><input aria-label="保存目录" :value="directory || '默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory()" :disabled="submitting || pickingDirectory">{{ pickingDirectory ? '正在打开…' : '选择目录' }}</button><button v-if="directory" type="button" class="secondary-button" @click="directory=''" :disabled="submitting">重置</button></div><small>通过飞牛选择并授权 NAS 目录，未选择时使用默认目录。</small><p v-if="directoryError" role="alert" class="error-banner">{{ directoryError }}</p></div>
+        <div v-if="createError" class="error-box form-message" role="alert">{{ createError }}</div>
+        <p v-if="!engines.some(e => e.ready)" class="hint form-message">当前没有可用引擎，请稍后重试。</p>
+      </div>
+      <div class="modal-footer"><span>文件保存在你的 NAS</span><button class="secondary-button" type="button" @click="createDialog?.close()" :disabled="submitting">取消</button><button class="primary-button" type="submit" :disabled="submitting || !url.trim() || !engines.some(e => e.name === engineName && e.ready)">{{ submitting ? '正在创建…' : '开始下载' }}</button></div>
     </form>
   </dialog>
   <dialog ref="detailsDialog" class="modal detail-modal" aria-labelledby="details-title" @cancel="cancelWhileBusy($event, !!pendingTask)">
