@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -129,8 +130,9 @@ func (h *Handler) Close() error {
 }
 
 func (h *Handler) routes() {
+	h.xunleiRoutes()
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.18", "runtime": "go", "database": "sqlite"})
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.19", "runtime": "go", "database": "sqlite"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"download_dir": filepath.Clean(h.cfg.DownloadDir), "data_dir": filepath.Clean(h.cfg.DataDir), "database": "sqlite"})
@@ -191,6 +193,12 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 	for _, task := range out {
 		result = append(result, task)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].CreatedAt.Equal(result[j].CreatedAt) {
+			return result[i].ID < result[j].ID
+		}
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
 	writeJSON(w, 200, result)
 }
 
@@ -200,10 +208,11 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var input struct {
-		Engine    string `json:"engine"`
-		URL       string `json:"url"`
-		Directory string `json:"directory"`
-		Name      string `json:"name"`
+		Engine    string            `json:"engine"`
+		URL       string            `json:"url"`
+		Directory string            `json:"directory"`
+		Name      string            `json:"name"`
+		Headers   map[string]string `json:"headers"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, 400, "invalid JSON body")
@@ -211,6 +220,14 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.Engine == "" {
 		input.Engine = "http"
+	}
+	if err := xunleiengine.ValidateHeaders(input.Headers); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	if len(input.Headers) > 0 && input.Engine != "xunlei" {
+		writeError(w, 400, "自定义请求头目前仅适用于迅雷引擎")
+		return
 	}
 	e, ok := h.engines.Get(input.Engine)
 	if !ok {
@@ -237,6 +254,14 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 		_ = e.Delete(r.Context(), task.ID, false)
 		writeError(w, 500, "could not persist download task")
 		return
+	}
+	if len(input.Headers) > 0 {
+		if err = e.(*xunleiengine.Engine).SetHeaders(r.Context(), task.ID, input.Headers); err != nil {
+			_ = e.Delete(r.Context(), task.ID, false)
+			_ = h.store.Delete(r.Context(), task.ID)
+			writeError(w, 502, err.Error())
+			return
+		}
 	}
 	if err = e.Start(r.Context(), task.ID); err != nil {
 		task.Status = engine.StatusFailed
@@ -276,8 +301,8 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 		err = selected.Pause(r.Context(), id)
 	case "resume":
 		err = selected.Resume(r.Context(), id)
-	case "delete":
-		err = selected.Delete(r.Context(), id, false)
+	case "delete", "delete-files":
+		err = selected.Delete(r.Context(), id, action == "delete-files")
 	default:
 		writeError(w, 400, "unsupported task action")
 		return
@@ -286,7 +311,7 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, err.Error())
 		return
 	}
-	if action == "delete" {
+	if action == "delete" || action == "delete-files" {
 		if err := h.store.Delete(r.Context(), id); err != nil {
 			writeError(w, 500, "could not remove task record")
 			return

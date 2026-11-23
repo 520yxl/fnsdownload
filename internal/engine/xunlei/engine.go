@@ -33,10 +33,14 @@ type Engine struct {
 	expires, retryAfter time.Time
 	lastError           error
 	compiled            bool
+	options             xunlei.Options
+	settingsError       error
 }
 
 func New(cfg Config) *Engine {
-	return &Engine{cfg: cfg, sdk: xunlei.New(), tasks: make(map[string]engine.Task), compiled: xunlei.Built()}
+	e := &Engine{cfg: cfg, sdk: xunlei.New(), tasks: make(map[string]engine.Task), compiled: xunlei.Built()}
+	e.loadOptions()
+	return e
 }
 func (e *Engine) Name() string                         { return "xunlei" }
 func (e *Engine) Initialize(ctx context.Context) error { return e.Health(ctx) }
@@ -62,6 +66,9 @@ func (e *Engine) ready(ctx context.Context) error {
 	return err
 }
 func (e *Engine) authenticate(ctx context.Context) error {
+	if e.settingsError != nil {
+		return e.settingsError
+	}
 	if !e.compiled {
 		return xunlei.ErrSDKNotBuilt
 	}
@@ -93,6 +100,15 @@ func (e *Engine) authenticate(ctx context.Context) error {
 		}
 		if err := e.sdk.Init(e.cfg.AppID, e.cfg.Version, e.cfg.StateDir); err != nil {
 			return err
+		}
+		if advanced, ok := e.sdk.(xunlei.Advanced); ok {
+			if e.options.Concurrent == 0 {
+				e.options = defaultOptions()
+			}
+			if err := advanced.Configure(e.options); err != nil {
+				_ = e.sdk.Close()
+				return err
+			}
 		}
 		e.auth = &thunderauth.Client{BaseURL: e.cfg.AuthURL, ProductID: "fnsdownload", Secret: secret}
 		// Restore without silently starting a previous download after restart.

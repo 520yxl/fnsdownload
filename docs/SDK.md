@@ -62,3 +62,21 @@ XUNLEI_PRODUCT_SECRET_FILE=/private/thunder-auth.secret XUNLEI_SDK_ROOT="$PWD/th
 GitHub Actions 加密 Secret `THUNDER_AUTH_PRODUCT_SECRET`；配置此 Secret 需单独授权。
 该构建产物包含可提取的产品凭据，不自动发布 Release，Actions artifact 仅保留 1 天。
 凭据值不能写入源码、工作流输入、日志或文档。
+
+
+## 0.5.19 SDK 功能入口
+
+- 新建下载：单个 HTTP(S) P2SP，或每行一个链接创建 SDK 原生批量任务，支持批量并发数。
+- 新建单文件迅雷任务：自定义 HTTP 请求头，在启动前传入 SDK；不写入应用 SQLite 数据库。
+- 下载器设置：SDK 最大并发任务数、下载/上传限速、P2P 上传开关、动态链接加速开关。迅雷设置原子写入 NAS SDK 状态目录的 settings.json，重启重新应用。0 代表不限速，按 SDK 要求映射 UINT32_MAX。
+- 任务详情：SDK 流量统计（源站/P2P/P2S）和可用的完成时间。
+- 恢复 SDK 任务：通过 finished/unfinished 原生枚举和 task info 导入遗漏记录；检查目录访问权限，未完成任务先暂停，已有记录去重。
+- 移除确认：默认保留文件；明确勾选后才调用 SDK 删除文件。
+- Token 获取、登录、会话刷新和 SDK 生命周期留在后端。低层 set_task_token 有 C ABI 包装，不提供手工输入或暴露授权 Token 的 UI。
+- 用户界面只支持 HTTP(S)，不宣称 BT、磁力、ED2K、迅雷会员账号或离线下载支持。
+- 浏览器无活动任务不轮询，任务按创建时间倒序并使用 ID 打破时间相同的排序平局。
+
+参考官方 API：https://open.xunlei.com/doc/download/sdk/cpp
+动态链接加速存在极低概率文件不一致风险；界面提供关闭开关与校验提示。P2P 上传默认关闭。
+
+验证层次：伪 SDK 测试覆盖设置持久化、厂商拒绝与磁盘失败回滚、批量任务、请求头注入拒绝、恢复权限和去重；原生测试加载官方库，验证配置 setter 和空任务枚举。创建/下载、非空流量、批量任务和恢复效果仍须 NAS 实机验收，构建通过不代表这些场景已通过。
