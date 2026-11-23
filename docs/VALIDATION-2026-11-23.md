@@ -43,8 +43,27 @@ Windows 官方 fnpack 1.3.3 在工作区和临时目录均报告 `sync ... Acces
 - restart 后回读：running。
 - 入口查询：fnsdownload.main，可见，iframe 路径 `/app/fnsdownload/`。
 
-后续 0.5.12 正式修复包构建和升级结果另行记录。
+0.5.12 最终修复包：提交 `38c9c0bbccb9df449cc7e10b61a17becb78c72f4`，Linux CI 运行 `45174454888` 成功。Skill 预检通过，返回 isSystemVersionMatch=true、hasWizard=false，识别原版本 0.5.11 为可升级。
+
+实际升级未通过：`app install-fpk` 调用 `/app-center/v1/install/task` 返回 10236；`app update --package-type local --dry-run` 调用 `/app-center/v1/download/task` 返回 10030。当前 Skill 这两条路径没有完成本地 FPK 升级，不能将预检成功当成升级成功。
+
+最后回读仍为 0.5.11、running；未卸载应用。本次文件路径对照测试创建的临时 FPK 和目录已清理。
 
 ## 验证边界
+
+## 0.5.13 UI 验证（本地样例服务）
+
+- 左侧分类、数量、任务搜索及空状态通过浏览器检查。
+- 新建任务弹窗：链接校验、成功关闭弹窗、列表更新通过。
+- 任务详情弹窗：实时状态展示、暂停操作通过。
+- 移除确认：取消时保留任务，确认后移除样例记录并关闭弹窗。
+- Logo 旁图标菜单提供浅色、深色、跟随系统；切换浅色/深色、刷新后保留选择通过。
+- 自动模式的实际配色与系统 prefers-color-scheme 一致。系统变化事件监听已接入，未修改操作系统主题作外部切换验收。
+- 390px 视口下页面和弹窗无横向溢出，主题菜单位于可视范围。
+- 上述数据均为本地样例，不代表 NAS 下载业务验收。
+
+本地 fnpack 已确认为 1.3.3。在实际 staging 目录运行 `fnpack.exe build` 返回未配置开发者证书；`fnpack.exe build --nosign` 返回文件 sync Access is denied，未成功生成本地包。测试包继续通过官方 Linux fnpack CI 构建。
+
+## 当前 NAS 验证边界
 
 按用户要求，全程使用 fnos-cli Skill 验证，不要求 NAS 内置 appcenter-cli。软件包仍为 SDK stub；SDK 登录、真实下载、浏览器页面交互、升级数据保留及卸载验收尚未完成。入口已注册不等于浏览器端网关功能已通过。
