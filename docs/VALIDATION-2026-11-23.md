@@ -65,3 +65,16 @@ Windows 官方 fnpack 1.3.3 在工作区和临时目录均报告 `sync ... Acces
 ## 当前 NAS 验证边界
 
 按用户要求，全程使用 fnos-cli Skill 验证，不要求 NAS 内置 appcenter-cli。软件包仍为 SDK stub；SDK 登录、真实下载、浏览器页面交互、升级数据保留及卸载验收尚未完成。入口已注册不等于浏览器端网关功能已通过。
+
+
+## 迅雷原生 SDK 接入（0.5.14）
+
+- 官方 SDK archive SHA256: `718923688ac3717f8edd316f46767ed61a7b82a912edfb6143233a29e34b9819`。
+- Linux x64 libdk.so SHA256: `1382e0f1639d57698bd43a0b1cedb5cbd621c203d8a117db68f753237ec155ff`。
+- CI run 45192467773 已通过真实 CGO 标签构建、动态库版本查询/初始化/释放测试、Go test/vet、原生 FPK 打包。
+- 可执行文件 RUNPATH 为 `$ORIGIN/lib`，FPK 包含 `server/lib/libdk.so`，SDK_BUILD=enabled。
+- 引擎覆盖 HTTP(S) 创建、控制、进度查询、SQLite 任务恢复；模拟测试不等于真实下载。
+- 已使用用户提供的配置向 `https://thunder-auth.moxyi.cn` 发送签名设备注册请求。
+  服务返回 HTTP 403 / code 40300（product_disabled）。核对产品 ID 后再次检查，仍为同一结果。
+  未获得 Login Token，尚未验证真实 SDK 登录或下载。Secret 未写入源码、Git、FPK 或 CI。
+- NAS 仍是之前安装的 0.5.11，未将 SDK 包安装成功；之前 Skill 本地升级接口限制仍待解决。

@@ -66,6 +66,19 @@ func TestTaskLifecycleAndSDKFailures(t *testing.T) {
 	if err := e.Resume(ctx, task.ID); err != nil {
 		t.Fatal(err)
 	}
+	e.lastError = errors.New("authorization unavailable")
+	e.retryAfter = time.Now().Add(time.Hour)
+	if err := e.Pause(ctx, task.ID); err != nil {
+		t.Fatal("authorization outage blocked pause")
+	}
+	if _, err := e.Get(ctx, task.ID); err != nil {
+		t.Fatal("authorization outage blocked task state")
+	}
+	if err := e.Resume(ctx, task.ID); err == nil {
+		t.Fatal("resume accepted invalid authorization")
+	}
+	e.lastError = nil
+
 	fake.fail = errors.New("SDK operation failed")
 	if err := e.Delete(ctx, task.ID, false); err == nil {
 		t.Fatal("SDK deletion failure swallowed")

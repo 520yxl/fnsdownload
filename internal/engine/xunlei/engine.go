@@ -208,8 +208,13 @@ func (e *Engine) control(ctx context.Context, id string, pause bool) error {
 	if err != nil {
 		return err
 	}
-	if err := e.ready(ctx); err != nil {
-		return err
+	if e.closed {
+		return errors.New("迅雷引擎已关闭")
+	}
+	if !pause || !e.initialized {
+		if err := e.ready(ctx); err != nil {
+			return err
+		}
 	}
 	if pause {
 		err = e.sdk.Stop(native)
@@ -243,8 +248,13 @@ func (e *Engine) Delete(ctx context.Context, id string, remove bool) error {
 	if err != nil {
 		return err
 	}
-	if err := e.ready(ctx); err != nil {
-		return err
+	if e.closed {
+		return errors.New("迅雷引擎已关闭")
+	}
+	if !e.initialized {
+		if err := e.ready(ctx); err != nil {
+			return err
+		}
 	}
 	if err := e.sdk.Delete(native, remove); err != nil {
 		return err
@@ -294,16 +304,22 @@ func (e *Engine) Get(ctx context.Context, id string) (engine.Task, error) {
 	if !ok {
 		return engine.Task{}, engine.ErrNotFound
 	}
-	if err := e.ready(ctx); err != nil {
-		return task, err
+	authErr := e.ready(ctx)
+	if authErr != nil && (!e.initialized || e.closed) {
+		return task, authErr
 	}
-	return e.update(task)
+	updated, err := e.update(task)
+	if err == nil && authErr != nil {
+		updated.Error = authErr.Error()
+	}
+	return updated, err
 }
 func (e *Engine) List(ctx context.Context) ([]engine.Task, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if err := e.ready(ctx); err != nil {
-		return nil, err
+	authErr := e.ready(ctx)
+	if authErr != nil && (!e.initialized || e.closed) {
+		return nil, authErr
 	}
 	result := make([]engine.Task, 0, len(e.tasks))
 	for _, task := range e.tasks {
@@ -311,6 +327,9 @@ func (e *Engine) List(ctx context.Context) ([]engine.Task, error) {
 		if err != nil {
 			updated = task
 			updated.Error = err.Error()
+		}
+		if authErr != nil && updated.Error == "" {
+			updated.Error = authErr.Error()
 		}
 		result = append(result, updated)
 	}
