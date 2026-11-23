@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/520yxl/fnsdownload/internal/engine"
@@ -19,6 +20,7 @@ import (
 )
 
 type Handler struct {
+	settingsMu   sync.Mutex
 	cfg          Config
 	mux          *http.ServeMux
 	handler      http.Handler
@@ -26,6 +28,7 @@ type Handler struct {
 	store        *store.Store
 	httpEngine   *httpengine.Engine
 	xunleiEngine *xunleiengine.Engine
+	aria2Engine  *aria2engine.Engine
 }
 
 func NewHandler(cfg Config) (*Handler, error) {
@@ -45,8 +48,10 @@ func NewHandler(cfg Config) (*Handler, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	if cfg.Aria2RPC != "" {
-		if err := manager.Register(aria2engine.New(cfg.Aria2RPC, cfg.Aria2Secret)); err != nil {
+	var aria2Adapter *aria2engine.Engine
+	if cfg.Aria2Binary != "" {
+		aria2Adapter = aria2engine.NewManaged(aria2engine.Config{Binary: cfg.Aria2Binary, StateDir: cfg.Aria2StateDir})
+		if err := manager.Register(aria2Adapter); err != nil {
 			_ = db.Close()
 			return nil, err
 		}
@@ -56,7 +61,7 @@ func NewHandler(cfg Config) (*Handler, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	h := &Handler{cfg: cfg, mux: http.NewServeMux(), engines: manager, store: db, httpEngine: httpAdapter, xunleiEngine: xunleiAdapter}
+	h := &Handler{cfg: cfg, mux: http.NewServeMux(), engines: manager, store: db, httpEngine: httpAdapter, xunleiEngine: xunleiAdapter, aria2Engine: aria2Adapter}
 	if err := h.restoreTasks(); err != nil {
 		_ = manager.Close()
 		_ = db.Close()
@@ -80,6 +85,12 @@ func (h *Handler) restoreTasks() error {
 		return err
 	}
 	for _, task := range tasks {
+		if task.Engine == "aria2" && h.aria2Engine != nil {
+			restored := h.aria2Engine.RestoreTask(task)
+			if err := h.store.Upsert(ctx, restored); err != nil {
+				return err
+			}
+		}
 		if task.Engine == "xunlei" {
 			restored := h.xunleiEngine.RestoreTask(task)
 			if err := h.store.Upsert(ctx, restored); err != nil {
@@ -130,9 +141,10 @@ func (h *Handler) Close() error {
 }
 
 func (h *Handler) routes() {
+	h.settingsRoutes()
 	h.xunleiRoutes()
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.20", "runtime": "go", "database": "sqlite"})
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.21", "runtime": "go", "database": "sqlite"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"download_dir": filepath.Clean(h.cfg.DownloadDir), "data_dir": filepath.Clean(h.cfg.DataDir), "database": "sqlite"})
@@ -238,13 +250,7 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "unknown download engine")
 		return
 	}
-	var dir string
-	var err error
-	if filepath.IsAbs(input.Directory) {
-		dir, err = authorizedDownloadDir(r.Context(), r.Header.Get("X-Trim-Userid"), input.Directory)
-	} else {
-		dir, err = h.safeDownloadDir(input.Directory)
-	}
+	dir, err := h.authorizedDirectory(r, input.Directory)
 	if err != nil {
 		writeError(w, 400, err.Error())
 		return

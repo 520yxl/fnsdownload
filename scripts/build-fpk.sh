@@ -16,6 +16,9 @@ for tool in go fnpack jq npm python3; do
 done
 
 cd "$ROOT"
+ARIA2_ROOT="$ROOT/.cache/aria2-runtime"
+python3 "$ROOT/scripts/bundle-aria2.py" "$ARIA2_ROOT"
+export ARIA2_TEST_BINARY="$ARIA2_ROOT/aria2c"
 go test ./...
 go vet ./...
 for wizard_file in install upgrade uninstall config; do
@@ -55,6 +58,10 @@ mkdir -p "$WORK_ROOT" "$DIST"
 [[ -d "$WORK" ]] || { echo "fnpack create did not create $WORK" >&2; exit 1; }
 
 mkdir -p "$WORK/app/server" "$WORK/app/www" "$WORK/app/ui/images"
+mkdir -p "$WORK/app/server/aria2"
+cp -a "$ARIA2_ROOT/." "$WORK/app/server/aria2/"
+python3 "$ROOT/scripts/check-x86-baseline.py" "$WORK/app/server/aria2/aria2c" "$WORK/app/server/aria2/lib/"*.so*
+LD_LIBRARY_PATH="$WORK/app/server/aria2/lib" qemu-x86_64 -cpu qemu64 "$WORK/app/server/aria2/aria2c" --version
 cp "$ROOT/manifest" "$WORK/manifest"
 cp "$ROOT/config/privilege" "$WORK/config/privilege"
 cp "$ROOT/config/resource" "$WORK/config/resource"
@@ -117,6 +124,7 @@ if [[ -f "$WORK/app/config/thunder-auth.secret" ]]; then
 else
   echo "PRODUCT_CREDENTIAL=external" >> "$DIST/build-info.txt"
 fi
+echo "ARIA2_BUILD=bundled-private-instance" >> "$DIST/build-info.txt"
 chmod 755 "$WORK/app/server/fnsdownload-amd64"
 
 for lifecycle in main install_init install_callback upgrade_init upgrade_callback uninstall_init uninstall_callback config_init config_callback; do

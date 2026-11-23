@@ -14,8 +14,8 @@ type Config struct {
 	DownloadDir   string
 	UIPath        string
 	GatewayPrefix string
-	Aria2RPC      string
-	Aria2Secret   string
+	Aria2Binary   string
+	Aria2StateDir string
 }
 
 func ConfigFromEnv() Config {
@@ -23,15 +23,15 @@ func ConfigFromEnv() Config {
 	data := env("DATA_DIR", filepath.Join(env("TRIM_PKGVAR", "."), "data"))
 	downloads := env("DOWNLOAD_DIR", filepath.Join(env("TRIM_APPDEST_VOL", "."), "@appshare", "fnsdownload", "downloads"))
 	return Config{
-		Xunlei:        xunleiengine.Config{BundledSecretFile: filepath.Join(appDest, "config", "thunder-auth.secret"), AppID: env("XUNLEI_APP_ID", "eGwtQ28zcDExODg2AAAAA24uAAA="), Version: "0.5.20", StateDir: filepath.Join(data, "xunlei"), AuthURL: env("THUNDER_AUTH_URL", "https://thunder-auth.moxyi.cn"), SecretFile: env("THUNDER_AUTH_SECRET_FILE", filepath.Join(env("TRIM_PKGVAR", "."), "config", "thunder-auth.secret"))},
+		Xunlei:        xunleiengine.Config{BundledSecretFile: filepath.Join(appDest, "config", "thunder-auth.secret"), AppID: env("XUNLEI_APP_ID", "eGwtQ28zcDExODg2AAAAA24uAAA="), Version: "0.5.21", StateDir: filepath.Join(data, "xunlei"), AuthURL: env("THUNDER_AUTH_URL", "https://thunder-auth.moxyi.cn"), SecretFile: env("THUNDER_AUTH_SECRET_FILE", filepath.Join(env("TRIM_PKGVAR", "."), "config", "thunder-auth.secret"))},
 		SocketPath:    filepath.Join(appDest, "app.sock"),
 		DataDir:       data,
 		DatabasePath:  filepath.Join(data, "tasks.db"),
 		DownloadDir:   downloads,
 		UIPath:        env("UI_DIR", filepath.Join(appDest, "www")),
 		GatewayPrefix: "/app/fnsdownload",
-		Aria2RPC:      os.Getenv("ARIA2_RPC"),
-		Aria2Secret:   os.Getenv("ARIA2_SECRET"),
+		Aria2Binary:   filepath.Join(appDest, "server", "aria2", "aria2c"),
+		Aria2StateDir: filepath.Join(data, "aria2"),
 	}
 }
 

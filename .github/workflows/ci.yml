@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: "22"
       - name: Install baseline CPU test emulator
-        run: sudo apt-get update -qq && sudo apt-get install -y qemu-user
+        run: sudo apt-get update -qq && sudo apt-get install -y qemu-user aria2
       - name: Resolve Go modules
         run: go mod tidy
       - name: Verify startup diagnostics

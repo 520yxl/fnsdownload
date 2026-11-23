@@ -29,3 +29,5 @@
 .sdk-settings{grid-column:1/-1;min-width:0;display:grid;gap:16px;border:1px solid var(--border);border-radius:12px;padding:18px;margin:0}.sdk-settings legend{padding:0 8px;font-weight:600}.check-setting{display:flex!important;align-items:center;gap:10px}.check-setting input{width:auto!important;flex:none}.sdk-settings small{line-height:1.6}
 
 .settings-page{max-width:1000px;margin:0 auto}.settings-panel{padding:28px}.settings-body{padding:0}.settings-actions{display:flex;justify-content:flex-end;gap:12px;padding-top:24px;margin-top:24px;border-top:1px solid var(--border)}.settings-page .sdk-settings{grid-template-columns:repeat(2,minmax(0,1fr))}.settings-page .sdk-settings small,.settings-page .sdk-settings .check-setting{grid-column:1/-1}@media(max-width:700px){.settings-panel{padding:18px}.settings-page .sdk-settings{grid-template-columns:1fr}}
+
+.shell{align-self:start;margin:0 auto}.shell>.welcome,.settings-page>.welcome{padding-top:20px}

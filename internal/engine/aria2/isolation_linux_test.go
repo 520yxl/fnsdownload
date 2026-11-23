@@ -1,0 +1,130 @@
+//go:build linux
+
+package aria2
+
+import (
+	"context"
+	"fmt"
+	"github.com/520yxl/fnsdownload/internal/engine"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestIndependentInstances(t *testing.T) {
+	binary := os.Getenv("ARIA2_TEST_BINARY")
+	if binary == "" {
+		var err error
+		binary, err = exec.LookPath("aria2c")
+		if err != nil {
+			t.Skip("aria2 runtime not installed")
+		}
+	}
+	binary, _ = filepath.Abs(binary)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// Both instances run real aria2. Closing one must not touch the other's task.
+	other := NewManaged(Config{Binary: binary, StateDir: filepath.Join(t.TempDir(), "other-app")})
+	defer other.Close()
+	own := NewManaged(Config{Binary: binary, StateDir: filepath.Join(t.TempDir(), "moxyi")})
+	defer own.Close()
+	if err := other.Health(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := own.Health(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if other.endpoint == own.endpoint || other.secret == own.secret {
+		t.Fatal("instances share RPC identity")
+	}
+	twin := NewManaged(own.cfg)
+	if err := twin.Health(ctx); err == nil {
+		t.Fatal("second instance acquired same state directory")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "16384")
+		fmt.Fprint(w, strings.Repeat("x", 16384))
+	}))
+	defer server.Close()
+	root := t.TempDir()
+	sentinel := filepath.Join(root, "file.bin")
+	if err := os.WriteFile(sentinel, []byte("other application file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	foreign, err := other.Create(ctx, engine.CreateRequest{URL: server.URL + "/file.bin", Directory: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := own.Create(ctx, engine.CreateRequest{URL: server.URL + "/file.bin", Directory: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Directory == foreign.Directory || task.Directory == root {
+		t.Fatal("download control files share a directory")
+	}
+	if _, err = own.Get(ctx, foreign.ID); err == nil {
+		t.Fatal("other instance task accepted")
+	}
+	if err = own.Start(ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(8 * time.Second)
+	for {
+		task, err = own.Get(ctx, task.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if task.Status == engine.StatusCompleted {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("real aria2 HTTP download did not finish", task.Status)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if data, err := os.ReadFile(filepath.Join(task.Directory, task.Name)); err != nil || len(data) != 16384 {
+		t.Fatal("downloaded data mismatch", err)
+	}
+	if err = own.Delete(ctx, task.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(sentinel); string(data) != "other application file" {
+		t.Fatal("unrelated file modified")
+	}
+	// Keep a paused task to verify private session restore and stable GID.
+	paused, err := own.Create(ctx, engine.CreateRequest{URL: server.URL + "/paused.bin", Directory: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := own.cfg
+	if err = own.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = other.Health(ctx); err != nil {
+		t.Fatal("closing own instance stopped other application", err)
+	}
+	if got, err := other.Get(ctx, foreign.ID); err != nil || got.Status != engine.StatusPaused {
+		t.Fatal("other task changed", err)
+	}
+	restarted := NewManaged(cfg)
+	defer restarted.Close()
+	restarted.RestoreTask(paused)
+	if err = restarted.Health(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := restarted.Get(ctx, paused.ID); err != nil || got.Status != engine.StatusPaused {
+		t.Fatal("session not restored paused", err)
+	}
+	config, _ := os.ReadFile(filepath.Join(cfg.StateDir, "runtime.conf"))
+	if !strings.Contains(string(config), "force-save=false") || !strings.Contains(string(config), "rpc-listen-all=false") {
+		t.Fatal("unsafe session or RPC defaults")
+	}
+	if mode, err := os.Stat(filepath.Join(cfg.StateDir, "runtime.conf")); err != nil || mode.Mode().Perm()&0077 != 0 {
+		t.Fatal("RPC configuration not private")
+	}
+}

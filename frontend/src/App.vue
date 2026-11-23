@@ -14,11 +14,9 @@ const themeOptions: {id: ThemeMode; label: string; path: string}[] = [
   {id:'dark',label:'深色模式',path:'M20.5 13.5A8.5 8.5 0 0 1 10.5 3.5a8.5 8.5 0 1 0 10 10'},
   {id:'auto',label:'跟随系统',path:'M3 4h18v12H3zM8 21h8M12 16v5'},
 ]
-function savedTheme(): ThemeMode {
-  try { const value = localStorage.getItem('moxyi-theme'); if (value==='light'||value==='dark'||value==='auto') return value } catch {}
-  return 'auto'
-}
-const themeMode = ref<ThemeMode>(savedTheme())
+const themeMode = ref<ThemeMode>('auto')
+const appSettingsLoaded = ref(false)
+const savingTheme = ref(false)
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 const systemDark = ref(systemTheme.matches)
 const activeThemeOption = computed(() => themeOptions.find(option => option.id===themeMode.value)!)
@@ -27,9 +25,16 @@ watch([themeMode,systemDark], () => {
   const resolved = themeMode.value==='auto' ? (systemDark.value ? 'dark' : 'light') : themeMode.value
   document.documentElement.dataset.theme = resolved
   document.documentElement.style.colorScheme = resolved
-  try { localStorage.setItem('moxyi-theme',themeMode.value) } catch {}
 }, {immediate:true})
-function cycleTheme() { themeMode.value = nextThemeOption.value.id }
+async function cycleTheme() {
+  if (!appSettingsLoaded.value || savingTheme.value) return
+  savingTheme.value = true
+  try {
+    const result = await api('/api/settings', {method:'PATCH',body:JSON.stringify({theme:nextThemeOption.value.id})})
+    themeMode.value = result.theme
+  } catch (e) { notify(e instanceof Error ? e.message : '无法保存主题模式') }
+  finally { savingTheme.value = false }
+}
 function systemThemeChanged(event: MediaQueryListEvent) { systemDark.value = event.matches }
 const engines = ref<Engine[]>([])
 const tasks = ref<Task[]>([])
@@ -39,22 +44,15 @@ const error = ref('')
 const connected = ref(false)
 const search = ref('')
 const url = ref('')
-const engineName = computed(() => ['xunlei','http'].find(name => engines.value.some(e => e.name === name && e.ready)) || '')
+const engineName = computed(() => ['xunlei','aria2','http'].find(name => engines.value.some(e => e.name === name && e.ready)) || '')
 const directory = ref('')
 type Preferences = { directory: string; interval: number }
-function readPreferences(): Preferences {
-  try {
-    const value = JSON.parse(localStorage.getItem('moxyi-downloader-settings') || '{}')
-    return {directory: typeof value.directory === 'string' ? value.directory : '', interval: [2500,5000,10000].includes(value.interval) ? value.interval : 2500}
-  } catch { return {directory:'',interval:2500} }
-}
-const preferences = ref<Preferences>(readPreferences())
+const preferences = ref<Preferences>({directory:'',interval:2500})
 const settingsDraft = ref<Preferences>({...preferences.value})
 const settingsError = ref('')
 const settingsPicking = ref(false)
 type XunleiOptions = {concurrent:number; download_kb:number; upload_kb:number; upload:boolean; dynamic_acceleration:boolean}
 const xunleiOptions = ref<XunleiOptions>({concurrent:10,download_kb:0,upload_kb:0,upload:false,dynamic_acceleration:true})
-const sdkVersion = ref('')
 const sdkSettingsLoaded = ref(false)
 const savingSettings = ref(false)
 const recovering = ref(false)
@@ -131,6 +129,13 @@ function openCreate() {
   directory.value = preferences.value.directory
   createDialog.value?.showModal()
 }
+async function loadAppSettings() {
+  const result = await api('/api/settings')
+  preferences.value = {directory:result.directory,interval:result.interval}
+  themeMode.value = result.theme
+  appSettingsLoaded.value = true
+  scheduleRefresh()
+}
 async function openSettings() {
   settingsDraft.value = {...preferences.value}
   settingsError.value = ''
@@ -138,9 +143,10 @@ async function openSettings() {
   sdkSettingsLoaded.value = false
   filter.value = 'settings'
   try {
+    await loadAppSettings()
+    settingsDraft.value = {...preferences.value}
     const result = await api('/api/xunlei/settings')
     xunleiOptions.value = result.options
-    sdkVersion.value = result.sdk_version
     sdkSettingsLoaded.value = true
   } catch (e) { settingsError.value = e instanceof Error ? e.message : '无法加载迅雷设置' }
 }
@@ -150,8 +156,11 @@ async function saveSettings() {
   settingsError.value = ''
   try {
     if (sdkSettingsLoaded.value) await api('/api/xunlei/settings', {method:'PUT',body:JSON.stringify(xunleiOptions.value)})
-    localStorage.setItem('moxyi-downloader-settings', JSON.stringify(settingsDraft.value))
-    preferences.value = {...settingsDraft.value}
+    const patch: {interval:number;directory?:string} = {interval:settingsDraft.value.interval}
+    if (settingsDraft.value.directory !== preferences.value.directory) patch.directory = settingsDraft.value.directory
+    const result = await api('/api/settings',{method:'PATCH',body:JSON.stringify(patch)})
+    preferences.value = {directory:result.directory,interval:result.interval}
+    themeMode.value = result.theme
     scheduleRefresh()
     notify('下载器设置已保存')
   } catch (e) { settingsError.value = e instanceof Error ? e.message : '无法保存设置' }
@@ -293,7 +302,7 @@ async function action(task: Task, actionName: string) {
   } catch (e) { operationError.value = e instanceof Error ? e.message : '操作失败' }
   finally { pendingTask.value = '' }
 }
-onMounted(() => { refresh(); document.addEventListener('visibilitychange', visibilityChanged); systemTheme.addEventListener('change',systemThemeChanged); window.addEventListener('message',directoryMessage) })
+onMounted(() => { void loadAppSettings().catch(e => notify(e instanceof Error ? e.message : '无法加载应用设置')); refresh(); document.addEventListener('visibilitychange', visibilityChanged); systemTheme.addEventListener('change',systemThemeChanged); window.addEventListener('message',directoryMessage) })
 onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.removeEventListener('visibilitychange', visibilityChanged); window.clearTimeout(notificationTimer); systemTheme.removeEventListener('change',systemThemeChanged); window.removeEventListener('message',directoryMessage) })
 </script>
 
@@ -305,7 +314,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
         <div class="brand-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m-4-4 4 4 4-4M5 17v3h14v-3" /></svg></div>
         <div><strong>MoxYi<span>Download</span></strong><small>让下载井然有序</small></div>
       </a>
-        <button class="theme-toggle" @click="cycleTheme" :aria-label="activeThemeOption.label+'，点击切换为'+nextThemeOption.label" :title="activeThemeOption.label+' · 点击切换为'+nextThemeOption.label"><svg viewBox="0 0 24 24" aria-hidden="true"><path :d="activeThemeOption.path" /></svg></button>
+        <button class="theme-toggle" @click="cycleTheme" :disabled="!appSettingsLoaded || savingTheme" :aria-label="activeThemeOption.label+'，点击切换为'+nextThemeOption.label" :title="activeThemeOption.label+' · 点击切换为'+nextThemeOption.label"><svg viewBox="0 0 24 24" aria-hidden="true"><path :d="activeThemeOption.path" /></svg></button>
       </div>
       <div class="nav-caption">下载管理</div>
       <nav class="side-nav" aria-label="下载任务分类">
@@ -361,7 +370,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
         <div class="directory-field"><span>默认保存目录</span><div class="directory-controls"><input aria-label="默认保存目录" :value="settingsDraft.directory || '应用默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory(true)" :disabled="pickingDirectory">选择目录</button><button v-if="settingsDraft.directory" type="button" class="secondary-button" @click="settingsDraft.directory=''">重置</button></div><p v-if="directoryError" class="error-banner" role="alert">{{ directoryError }}</p></div>
         <label><span>下载进度同步间隔</span><select v-model.number="settingsDraft.interval"><option :value="2500">2.5 秒</option><option :value="5000">5 秒</option><option :value="10000">10 秒</option></select><small>仅有下载中或等待中的任务时同步，页面隐藏时暂停。</small></label>
         <fieldset v-if="sdkSettingsLoaded" class="sdk-settings" :disabled="savingSettings || recovering">
-          <legend>迅雷引擎 · {{ sdkVersion || 'SDK 版本暂不可用' }}</legend>
+          <legend>迅雷引擎</legend>
           <label><span>最大同时下载任务数</span><input v-model.number="xunleiOptions.concurrent" type="number" min="1" max="100" required /></label>
           <label><span>下载限速（KB/s，0 不限速）</span><input v-model.number="xunleiOptions.download_kb" type="number" min="0" max="4294967295" required /></label>
           <label><span>上传限速（KB/s，0 不限速）</span><input v-model.number="xunleiOptions.upload_kb" type="number" min="0" max="4294967295" required /></label>
@@ -371,7 +380,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
           <button type="button" class="secondary-button" @click="recoverSDKTasks" :disabled="recovering">{{ recovering ? '处理中…' : '重置' }}</button>
           <small>未完成任务恢复为暂停，不会自动开始下载。</small>
         </fieldset>
-        <p class="hint">迅雷设置保存在 NAS 并立即生效；默认目录和同步间隔保存在当前浏览器。</p>
+        <p class="hint">所有设置保存在应用中，更换浏览器或设备后仍然生效。</p>
         <div v-if="settingsError" class="error-box" role="alert">{{ settingsError }}</div>
       </div>
       <div class="settings-actions"><button type="button" class="secondary-button" @click="openSettings" :disabled="savingSettings || recovering || pickingDirectory">重置更改</button><button type="submit" class="primary-button" :disabled="pickingDirectory || savingSettings || recovering">{{ savingSettings ? '正在保存…' : '保存设置' }}</button></div>

@@ -22,6 +22,16 @@ func (h *Handler) getXunleiEngine() (*xunleiengine.Engine, error) {
 	return x, nil
 }
 func (h *Handler) authorizedDirectory(r *http.Request, path string) (string, error) {
+	if path == "" {
+		h.settingsMu.Lock()
+		preferences, err := h.readSettings()
+		h.settingsMu.Unlock()
+		if err != nil {
+			return "", errors.New("无法读取应用设置")
+		}
+		path = preferences.Directory
+	}
+
 	if filepath.IsAbs(path) {
 		return authorizedDownloadDir(r.Context(), r.Header.Get("X-Trim-Userid"), path)
 	}
