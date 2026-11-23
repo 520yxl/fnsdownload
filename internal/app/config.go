@@ -23,7 +23,7 @@ func ConfigFromEnv() Config {
 	data := env("DATA_DIR", filepath.Join(env("TRIM_PKGVAR", "."), "data"))
 	downloads := env("DOWNLOAD_DIR", filepath.Join(env("TRIM_APPDEST_VOL", "."), "@appshare", "fnsdownload", "downloads"))
 	return Config{
-		Xunlei:        xunleiengine.Config{AppID: env("XUNLEI_APP_ID", "eGwtQ28zcDExODg2AAAAA24uAAA="), Version: "0.5.16", StateDir: filepath.Join(data, "xunlei"), AuthURL: env("THUNDER_AUTH_URL", "https://thunder-auth.moxyi.cn"), SecretFile: env("THUNDER_AUTH_SECRET_FILE", filepath.Join(env("TRIM_PKGVAR", "."), "config", "thunder-auth.secret"))},
+		Xunlei:        xunleiengine.Config{AppID: env("XUNLEI_APP_ID", "eGwtQ28zcDExODg2AAAAA24uAAA="), Version: "0.5.17", StateDir: filepath.Join(data, "xunlei"), AuthURL: env("THUNDER_AUTH_URL", "https://thunder-auth.moxyi.cn"), SecretFile: env("THUNDER_AUTH_SECRET_FILE", filepath.Join(env("TRIM_PKGVAR", "."), "config", "thunder-auth.secret"))},
 		SocketPath:    filepath.Join(appDest, "app.sock"),
 		DataDir:       data,
 		DatabasePath:  filepath.Join(data, "tasks.db"),

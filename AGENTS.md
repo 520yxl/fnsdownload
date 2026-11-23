@@ -5,7 +5,7 @@
 - Product: MoxYi Download, a native fnOS desktop FPK application.
 - Supported target: x86_64 / amd64 only. Do not add ARM64 binaries, builds, package targets or compatibility claims.
 - Runtime and deployment: native Go process in fnOS FPK. Docker, Compose and containers are prohibited.
-- Authorization center: Thunder_auth, product_id `moxyi-download`, HMAC-SHA256, shared Login Token, scopes `xtask.p2sp` + `xindex.query`.
+- Authorization center: Thunder_auth, product_id `fnsdownload`, HMAC-SHA256, shared Login Token, scopes `xtask.p2sp` + `xindex.query`.
 
 ## Architecture
 - Go backend; Vue 3 static UI embedded with Go embed.

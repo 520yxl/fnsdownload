@@ -26,7 +26,7 @@ FPK 将运行库打包到 `server/lib/libdk.so`，可执行文件 RUNPATH 为 `$
 
 ## 授权配置
 
-默认 App ID 使用用户提供的 App ID；默认授权中心为 `https://thunder-auth.moxyi.cn`，产品 ID 为 `moxyi-download`。
+默认 App ID 使用用户提供的 App ID；默认授权中心为 `https://thunder-auth.moxyi.cn`，产品 ID 为 `fnsdownload`。
 需要在授权中心为该产品配置至少 32 字节的产品 Secret，再将同一值写入 NAS 应用私有目录
 `$TRIM_PKGVAR/config/thunder-auth.secret`（纯文本、无引号，目录权限 0700，文件权限 0600，由应用用户持有）。
 不要写入迅雷官方 API Key。不要把 Secret 提交到 Git 或发到聊天里。

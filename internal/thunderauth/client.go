@@ -123,7 +123,7 @@ func authError(status int, payload []byte) error {
 	_ = json.Unmarshal(payload, &result)
 	switch result.Code {
 	case 40300:
-		return errors.New("授权中心尚未启用 moxyi-download 产品（40300）")
+		return errors.New("授权中心尚未启用 fnsdownload 产品（40300）")
 	case 40301:
 		return errors.New("授权中心已禁用此设备（40301）")
 	case 40100:

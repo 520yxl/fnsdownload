@@ -94,7 +94,7 @@ func (e *Engine) authenticate(ctx context.Context) error {
 		if err := e.sdk.Init(e.cfg.AppID, e.cfg.Version, e.cfg.StateDir); err != nil {
 			return err
 		}
-		e.auth = &thunderauth.Client{BaseURL: e.cfg.AuthURL, ProductID: "moxyi-download", Secret: secret}
+		e.auth = &thunderauth.Client{BaseURL: e.cfg.AuthURL, ProductID: "fnsdownload", Secret: secret}
 		// Restore without silently starting a previous download after restart.
 		for _, task := range e.tasks {
 			if task.Status != engine.StatusCompleted && task.Status != engine.StatusRemoved {
