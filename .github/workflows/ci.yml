@@ -1,0 +1,15 @@
+name: Native fnOS FPK
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_product_secret:
+        description: Build a private FPK with the configured product credential
+        type: boolean
+        default: false
+jobs:
+  select-development-branch:
+    runs-on: ubuntu-22.04
+    steps:
+      - run: |
+          echo 'Select codex/fpk-validation in Run workflow to build the native FPK.'
+          exit 1
