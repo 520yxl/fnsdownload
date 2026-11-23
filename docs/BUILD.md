@@ -5,12 +5,12 @@
 ## 包内结构
 FPK 根目录包含 manifest、config、cmd、wizard、i18n、图标和 app.tgz。app.tgz 内必须有：
 - server/fnsdownload-amd64
-- ui/index.html
+- www/index.html
 - ui/config
-- ui/assets/app.css、ui/assets/app.js
-- ui/images/icon_0.png、ui/images/icon_1.png
+- www/assets/app.css、www/assets/app.js
+- ui/images/icon_64.png、ui/images/icon_256.png
 
-Go 后端监听 `${TRIM_APPDEST}/target/app.sock`，由 fnOS 统一网关以 /app/fnsdownload 转发。
+Go 后端监听 `${TRIM_APPDEST}/app.sock`（安装后通常为 `/var/apps/fnsdownload/target/app.sock`），由 fnOS 统一网关以 /app/fnsdownload 转发。
 
 ## 本地构建
 ```bash

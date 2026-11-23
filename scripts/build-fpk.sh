@@ -7,7 +7,7 @@ WORK_ROOT="$ROOT/.fpk-work-root"
 WORK="$WORK_ROOT/fnsdownload"
 SDK_ROOT="${XUNLEI_SDK_ROOT:-}"
 
-for tool in go fnpack jq npm; do
+for tool in go fnpack jq npm python3; do
   command -v "$tool" >/dev/null 2>&1 || { echo "$tool is required on the build host" >&2; exit 1; }
 done
 
@@ -29,7 +29,7 @@ done
 # Build the Vue frontend first. Vite emits assets under /app/fnsdownload/.
 (
   cd "$ROOT/frontend"
-  npm install --no-audit --no-fund
+  npm ci --no-audit --no-fund
   npm run build
 )
 [[ -s "$ROOT/internal/app/web/index.html" ]] || { echo "Vue build did not produce index.html" >&2; exit 1; }
@@ -82,6 +82,7 @@ chmod 755 "$WORK/app/server/fnsdownload-amd64"
 
 for lifecycle in main install_init install_callback upgrade_init upgrade_callback uninstall_init uninstall_callback config_init config_callback; do
   cp "$ROOT/cmd/$lifecycle" "$WORK/cmd/$lifecycle"
+  chmod 755 "$WORK/cmd/$lifecycle"
 done
 for wizard_file in install upgrade uninstall config; do
   cp "$ROOT/wizard/$wizard_file" "$WORK/wizard/$wizard_file"
@@ -101,6 +102,20 @@ cp "$FPK" "$DIST/fnsdownload-x86_64.fpk"
 
 file "$DIST/fnsdownload-x86_64.fpk"
 tar -tzf "$DIST/fnsdownload-x86_64.fpk" > "$DIST/fpk-files.txt"
+python3 - "$DIST/fnsdownload-x86_64.fpk" <<'PY'
+import sys, tarfile
+with tarfile.open(sys.argv[1], "r:gz") as archive:
+    entries = {entry.name.removeprefix("./"): entry for entry in archive}
+    for name in ("main", "install_init", "install_callback", "upgrade_init", "upgrade_callback",
+                 "uninstall_init", "uninstall_callback", "config_init", "config_callback"):
+        entry = entries.get("cmd/" + name)
+        if entry is None or not entry.isfile() or entry.mode & 0o111 != 0o111:
+            raise SystemExit("Lifecycle script must be executable in FPK: cmd/" + name)
+        content = archive.extractfile(entry).read()
+        if not content.startswith(b"#!/") or b"\r" in content:
+            raise SystemExit("Lifecycle script requires a shebang and Unix line endings: cmd/" + name)
+print("FPK lifecycle script permissions and line endings passed")
+PY
 APP_TGZ_ENTRY="$(awk '$0 ~ /app[.]tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
 [[ -n "$APP_TGZ_ENTRY" ]] || { echo "FPK is missing app.tgz"; exit 1; }
 tar -xOf "$DIST/fnsdownload-x86_64.fpk" "$APP_TGZ_ENTRY" | tar -tzf - > "$DIST/app-files.txt"

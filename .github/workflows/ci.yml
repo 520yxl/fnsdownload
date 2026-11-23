@@ -18,11 +18,6 @@ jobs:
           node-version: "22"
       - name: Resolve Go modules
         run: go mod tidy
-      - name: Build Vue 3 frontend
-        working-directory: frontend
-        run: |
-          npm install --no-audit --no-fund
-          npm run build
       - name: Install fnpack
         run: |
           curl -fL --retry 3 https://static2.fnnas.com/fnpack/fnpack-1.3.3-linux-amd64 -o /usr/local/bin/fnpack

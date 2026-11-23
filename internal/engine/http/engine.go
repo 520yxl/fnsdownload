@@ -94,6 +94,7 @@ func (e *Engine) download(ctx context.Context,task engine.Task){
 		if readErr==io.EOF{break};if readErr!=nil{if ctx.Err()!=nil{e.finish(task.ID,engine.StatusPaused,nil)}else{e.finish(task.ID,engine.StatusFailed,readErr)};return}
 	}
 	if err:=f.Sync();err!=nil{e.finish(task.ID,engine.StatusFailed,err);return}
+	if err:=f.Close();err!=nil{e.finish(task.ID,engine.StatusFailed,err);return}
 	if err:=os.Rename(part,path);err!=nil{e.finish(task.ID,engine.StatusFailed,err);return}
 	e.finish(task.ID,engine.StatusCompleted,nil)
 }
