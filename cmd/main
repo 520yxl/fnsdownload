@@ -7,9 +7,20 @@ SOCKET="$APP_DEST/app.sock"
 PID_FILE="$PKGVAR/fnsdownload.pid"
 LOG_DIR="$PKGVAR/logs"
 LOG_FILE="$LOG_DIR/app.log"
+STARTUP_LOG="$LOG_DIR/startup.log"
 report_error() {
   printf '%s\n' "$1" >&2
   if [[ -n "${TRIM_TEMP_LOGFILE:-}" ]]; then printf '%s\n' "$1" >"$TRIM_TEMP_LOGFILE"; fi
+}
+report_startup_error() {
+  local detail
+  detail="$(tail -n 12 "$STARTUP_LOG" 2>/dev/null | tail -c 1800)"
+  if [[ -n "$detail" ]]; then
+    report_error "Service exited during startup:
+$detail"
+  else
+    report_error "Service exited during startup without diagnostic output. Check $LOG_FILE"
+  fi
 }
 is_running() {
   [[ -s "$PID_FILE" ]] || return 1
@@ -28,13 +39,25 @@ case "${1:-}" in
     export DATA_DIR="$PKGVAR/data"
     export DOWNLOAD_DIR="$PKGVAR/data/downloads"
     export UI_DIR="$APP_DEST/www"
+    # Keep vendor libraries in the application, independent of the host loader cache.
+    export LD_LIBRARY_PATH="$APP_DEST/server/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     export HOME="${TRIM_PKGHOME:-$PKGVAR}"
     export TRIM_APPDEST TRIM_PKGVAR
+    # Remember the offset so error reporting includes only this startup attempt.
+    : >>"$LOG_FILE"
+    LOG_OFFSET="$(wc -c <"$LOG_FILE")"
+    : >"$STARTUP_LOG"
+    chmod 600 "$STARTUP_LOG"
     nohup "$BIN" >>"$LOG_FILE" 2>&1 </dev/null &
     echo "$!" >"$PID_FILE"
     for _ in {1..40}; do
       if is_running && [[ -S "$SOCKET" ]]; then exit 0; fi
-      if ! is_running; then report_error "Service exited during startup. Check $LOG_FILE"; rm -f "$PID_FILE"; exit 1; fi
+      if ! is_running; then
+        tail -c "+$((LOG_OFFSET+1))" "$LOG_FILE" >"$STARTUP_LOG"
+        report_startup_error
+        rm -f "$PID_FILE"
+        exit 1
+      fi
       sleep 0.25
     done
     report_error "Service did not create gateway socket. Check $LOG_FILE"
