@@ -47,16 +47,30 @@ func TestIndependentInstances(t *testing.T) {
 		t.Fatal("second instance acquired same state directory")
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/held.bin" {
+			w.Header().Set("Content-Length", "1073741824")
+			for {
+				select {
+				case <-r.Context().Done():
+					return
+				case <-time.After(20 * time.Millisecond):
+					if _, err := fmt.Fprint(w, strings.Repeat("y", 4096)); err != nil {
+						return
+					}
+					w.(http.Flusher).Flush()
+				}
+			}
+		}
 		w.Header().Set("Content-Length", "16384")
 		fmt.Fprint(w, strings.Repeat("x", 16384))
 	}))
-	defer server.Close()
+	defer func() { _ = other.Close(); server.Close() }()
 	root := t.TempDir()
 	sentinel := filepath.Join(root, "file.bin")
 	if err := os.WriteFile(sentinel, []byte("other application file"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	foreign, err := other.Create(ctx, engine.CreateRequest{URL: server.URL + "/file.bin", Directory: root})
+	foreign, err := other.Create(ctx, engine.CreateRequest{URL: server.URL + "/held.bin", Directory: root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,6 +84,15 @@ func TestIndependentInstances(t *testing.T) {
 	if _, err = own.Get(ctx, foreign.ID); err == nil {
 		t.Fatal("other instance task accepted")
 	}
+	if err = other.Start(ctx, foreign.ID); err != nil {
+		t.Fatal(err)
+	}
+	wrongToken := own.secret
+	own.secret = other.secret
+	if err = own.call(ctx, "aria2.getVersion", nil, nil); err == nil {
+		t.Fatal("cross-instance token accepted")
+	}
+	own.secret = wrongToken
 	if err = own.Start(ctx, task.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +131,7 @@ func TestIndependentInstances(t *testing.T) {
 	if err = other.Health(ctx); err != nil {
 		t.Fatal("closing own instance stopped other application", err)
 	}
-	if got, err := other.Get(ctx, foreign.ID); err != nil || got.Status != engine.StatusPaused {
+	if got, err := other.Get(ctx, foreign.ID); err != nil || got.Status != engine.StatusRunning {
 		t.Fatal("other task changed", err)
 	}
 	restarted := NewManaged(cfg)
