@@ -20,25 +20,16 @@ function savedTheme(): ThemeMode {
 const themeMode = ref<ThemeMode>(savedTheme())
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 const systemDark = ref(systemTheme.matches)
-const themeMenu = ref<HTMLDetailsElement | null>(null)
 const activeThemeOption = computed(() => themeOptions.find(option => option.id===themeMode.value)!)
+const nextThemeOption = computed(() => themeOptions[(themeOptions.findIndex(option => option.id===themeMode.value)+1)%themeOptions.length])
 watch([themeMode,systemDark], () => {
   const resolved = themeMode.value==='auto' ? (systemDark.value ? 'dark' : 'light') : themeMode.value
   document.documentElement.dataset.theme = resolved
   document.documentElement.style.colorScheme = resolved
   try { localStorage.setItem('moxyi-theme',themeMode.value) } catch {}
 }, {immediate:true})
-function selectTheme(mode: ThemeMode) {
-  themeMode.value = mode
-  if (themeMenu.value) themeMenu.value.open = false
-}
+function cycleTheme() { themeMode.value = nextThemeOption.value.id }
 function systemThemeChanged(event: MediaQueryListEvent) { systemDark.value = event.matches }
-function dismissThemeMenu(event: PointerEvent) {
-  if (themeMenu.value?.open && event.target instanceof Node && !themeMenu.value.contains(event.target)) themeMenu.value.open = false
-}
-function themeMenuKeydown(event: KeyboardEvent) {
-  if (event.key==='Escape' && themeMenu.value?.open) { themeMenu.value.open=false; themeMenu.value.querySelector('summary')?.focus() }
-}
 const engines = ref<Engine[]>([])
 const tasks = ref<Task[]>([])
 const loading = ref(false)
@@ -180,8 +171,8 @@ async function action(task: Task, actionName: string) {
   } catch (e) { operationError.value = e instanceof Error ? e.message : '操作失败' }
   finally { pendingTask.value = '' }
 }
-onMounted(() => { refresh(); timer = window.setInterval(refresh, 2500); systemTheme.addEventListener('change',systemThemeChanged); document.addEventListener('pointerdown',dismissThemeMenu); document.addEventListener('keydown',themeMenuKeydown) })
-onUnmounted(() => { if (timer) window.clearInterval(timer); window.clearTimeout(notificationTimer); systemTheme.removeEventListener('change',systemThemeChanged); document.removeEventListener('pointerdown',dismissThemeMenu); document.removeEventListener('keydown',themeMenuKeydown) })
+onMounted(() => { refresh(); timer = window.setInterval(refresh, 2500); systemTheme.addEventListener('change',systemThemeChanged) })
+onUnmounted(() => { if (timer) window.clearInterval(timer); window.clearTimeout(notificationTimer); systemTheme.removeEventListener('change',systemThemeChanged) })
 </script>
 
 <template>
@@ -192,7 +183,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); window.clearTimeout(
         <div class="brand-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m-4-4 4 4 4-4M5 17v3h14v-3" /></svg></div>
         <div><strong>MoxYi<span>Download</span></strong><small>让下载井然有序</small></div>
       </a>
-        <details ref="themeMenu" class="theme-menu"><summary :aria-label="'外观：'+activeThemeOption.label" title="切换外观"><svg viewBox="0 0 24 24" aria-hidden="true"><path :d="activeThemeOption.path" /></svg></summary><fieldset class="theme-options"><legend>外观模式</legend><label v-for="option in themeOptions" :key="option.id"><input type="radio" name="theme" :value="option.id" :checked="themeMode===option.id" @change="selectTheme(option.id)" /><svg viewBox="0 0 24 24" aria-hidden="true"><path :d="option.path" /></svg><span>{{ option.label }}</span><small v-if="themeMode===option.id">✓</small></label><p>自动模式随系统外观切换</p></fieldset></details>
+        <button class="theme-toggle" @click="cycleTheme" :aria-label="activeThemeOption.label+'，点击切换为'+nextThemeOption.label" :title="activeThemeOption.label+' · 点击切换为'+nextThemeOption.label"><svg viewBox="0 0 24 24" aria-hidden="true"><path :d="activeThemeOption.path" /></svg></button>
       </div>
       <div class="nav-caption">下载管理</div>
       <nav class="side-nav" aria-label="下载任务分类">
