@@ -6,6 +6,10 @@ DIST="$ROOT/dist"
 WORK_ROOT="$ROOT/.fpk-work-root"
 WORK="$WORK_ROOT/fnsdownload"
 SDK_ROOT="${XUNLEI_SDK_ROOT:-}"
+# Pin both Go and C code to baseline amd64, including CI's startup objects.
+export GOAMD64=v1
+export CGO_CFLAGS="-O2 -g -march=x86-64 -mtune=generic"
+export CGO_CXXFLAGS="$CGO_CFLAGS"
 
 for tool in go fnpack jq npm python3; do
   command -v "$tool" >/dev/null 2>&1 || { echo "$tool is required on the build host" >&2; exit 1; }
@@ -78,10 +82,20 @@ if [[ -n "$SDK_ROOT" ]]; then
   CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go vet -tags xunlei_sdk ./...
   CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -tags xunlei_sdk -ldflags="-s -w" -o "$WORK/app/server/fnsdownload-amd64" ./cmd/fnsdownload
   cp -a "$SDK_ROOT/lib/." "$WORK/app/server/lib/"
+  python3 "$ROOT/scripts/check-x86-baseline.py" "$WORK/app/server/fnsdownload-amd64" "$WORK/app/server/lib/libdk.so"
+  if command -v qemu-x86_64 >/dev/null 2>&1; then
+    CGO_ENABLED=1 go test -c -tags xunlei_sdk -o "$DIST/sdk-runtime-test" ./internal/xunlei
+    qemu-x86_64 -cpu qemu64 "$DIST/sdk-runtime-test" -test.v
+    python3 "$ROOT/scripts/test-baseline-startup.py" "$WORK/app/server/fnsdownload-amd64"
+    rm "$DIST/sdk-runtime-test"
+  else
+    echo "qemu-x86_64 is required for baseline CPU runtime validation" >&2
+    exit 1
+  fi
   ldd "$WORK/app/server/fnsdownload-amd64"
   if ldd "$WORK/app/server/fnsdownload-amd64" | grep -q 'not found'; then echo 'Missing SDK runtime dependency'; exit 1; fi
   readelf -d "$WORK/app/server/fnsdownload-amd64" | grep -F '$ORIGIN/lib'
-  echo "SDK_BUILD=enabled" > "$DIST/build-info.txt"
+  printf 'SDK_BUILD=enabled\nGOAMD64=v1\nCPU_BASELINE_TEST=qemu64 passed\n' > "$DIST/build-info.txt"
 else
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$WORK/app/server/fnsdownload-amd64" ./cmd/fnsdownload
   echo "SDK_BUILD=stub (official SDK not supplied)" > "$DIST/build-info.txt"
