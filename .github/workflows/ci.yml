@@ -30,6 +30,31 @@ jobs:
           file dist/fnsdownload-x86_64.fpk
           cat dist/build-info.txt
           cat dist/app-files.txt
+      - name: Build isolated package compatibility probes
+        if: github.head_ref == 'codex/fpk-validation'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .fpk-probes dist/probes
+          for variant in no-empty-wizards no-i18n no-both; do
+            work="$GITHUB_WORKSPACE/.fpk-probes/$variant"
+            cp -a .fpk-work-root/fnsdownload "$work"
+            find "$work" -maxdepth 1 -name '*.fpk' -delete
+            if [[ "$variant" != no-i18n ]]; then
+              for name in install upgrade config; do
+                if jq -e 'length == 0' "$work/wizard/$name" >/dev/null; then
+                  rm "$work/wizard/$name"
+                fi
+              done
+            fi
+            if [[ "$variant" != no-empty-wizards ]]; then
+              rm -rf "$work/i18n"
+            fi
+            (cd "$work" && fnpack build --nosign)
+            fpk="$(find "$work" -maxdepth 1 -name '*.fpk' -print -quit)"
+            test -n "$fpk"
+            cp "$fpk" "dist/probes/$variant.fpk"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: fnsdownload-x86_64-${{ github.sha }}
@@ -38,5 +63,6 @@ jobs:
             dist/build-info.txt
             dist/fpk-files.txt
             dist/app-files.txt
+            dist/probes/*.fpk
           if-no-files-found: error
           retention-days: 14
