@@ -26,4 +26,4 @@
 
 .directory-field{grid-column:1/-1}.directory-field>span{font-size:10px;color:var(--secondary)}.directory-field .error-banner{color:var(--error-text);font-size:11px;line-height:1.7}.directory-controls button{font-size:12px}
 
-.sdk-settings{display:grid;gap:16px;border:1px solid var(--border);border-radius:12px;padding:18px;margin:0}.sdk-settings legend{padding:0 8px;font-weight:600}.check-setting{display:flex!important;align-items:center;gap:10px}.check-setting input{width:auto!important;flex:none}.sdk-settings small{line-height:1.6}
+.sdk-settings{grid-column:1/-1;min-width:0;display:grid;gap:16px;border:1px solid var(--border);border-radius:12px;padding:18px;margin:0}.sdk-settings legend{padding:0 8px;font-weight:600}.check-setting{display:flex!important;align-items:center;gap:10px}.check-setting input{width:auto!important;flex:none}.sdk-settings small{line-height:1.6}
