@@ -69,10 +69,18 @@ if [[ -n "$SDK_ROOT" ]]; then
   [[ -s "$HEADER" ]] || { echo "Missing official SDK header: $HEADER" >&2; exit 1; }
   [[ -s "$LIB" ]] || { echo "Missing official SDK library: $LIB" >&2; exit 1; }
   mkdir -p "$ROOT/third_party/xunlei/include" "$ROOT/third_party/xunlei/lib" "$WORK/app/server/lib"
-  cp -a "$SDK_ROOT/include/." "$ROOT/third_party/xunlei/include/"
-  cp -a "$SDK_ROOT/lib/." "$ROOT/third_party/xunlei/lib/"
+  if [[ "$(cd "$SDK_ROOT" && pwd)" != "$ROOT/third_party/xunlei" ]]; then
+    cp -a "$SDK_ROOT/include/." "$ROOT/third_party/xunlei/include/"
+    cp -a "$SDK_ROOT/lib/." "$ROOT/third_party/xunlei/lib/"
+  fi
+  export LD_LIBRARY_PATH="$ROOT/third_party/xunlei/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go test -tags xunlei_sdk ./...
+  CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go vet -tags xunlei_sdk ./...
   CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -tags xunlei_sdk -ldflags="-s -w" -o "$WORK/app/server/fnsdownload-amd64" ./cmd/fnsdownload
   cp -a "$SDK_ROOT/lib/." "$WORK/app/server/lib/"
+  ldd "$WORK/app/server/fnsdownload-amd64"
+  if ldd "$WORK/app/server/fnsdownload-amd64" | grep -q 'not found'; then echo 'Missing SDK runtime dependency'; exit 1; fi
+  readelf -d "$WORK/app/server/fnsdownload-amd64" | grep -F '$ORIGIN/lib'
   echo "SDK_BUILD=enabled" > "$DIST/build-info.txt"
 else
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$WORK/app/server/fnsdownload-amd64" ./cmd/fnsdownload

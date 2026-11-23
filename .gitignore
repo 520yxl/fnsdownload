@@ -5,3 +5,10 @@ downloads/
 *.log
 .env
 .DS_Store
+.cache/
+dist/
+.fpk-work-root/
+*.env
+
+third_party/xunlei/include/
+third_party/xunlei/lib/

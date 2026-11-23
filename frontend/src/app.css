@@ -21,3 +21,7 @@
 
 
 .theme-toggle{flex-shrink:0;width:29px;height:29px;border:0;border-radius:8px;background:transparent;color:var(--muted);display:grid;place-items:center}.theme-toggle:hover{background:var(--accent-soft);color:var(--accent)}.theme-toggle svg{width:17px;height:17px}
+
+.directory-field{display:grid;gap:8px}.directory-controls{display:flex;gap:8px}.directory-controls input{flex:1;min-width:0}.directory-controls button{white-space:nowrap}.directory-field>small{color:var(--muted);font-size:12px}@media(max-width:520px){.directory-controls{flex-wrap:wrap}.directory-controls input{flex-basis:100%}}
+
+.directory-field{grid-column:1/-1}.directory-field>span{font-size:10px;color:var(--secondary)}.directory-field .error-banner{color:var(--error-text);font-size:11px;line-height:1.7}.directory-controls button{font-size:12px}

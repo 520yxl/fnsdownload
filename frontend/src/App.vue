@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { TrimApp, type AppAuthResult } from '@trimjs/web-app'
 
 type Engine = { name: string; ready: boolean; error?: string }
 type Task = {
@@ -40,6 +41,44 @@ const search = ref('')
 const url = ref('')
 const engineName = ref('http')
 const directory = ref('')
+const pickingDirectory = ref(false)
+const directoryError = ref('')
+const fnos = new TrimApp()
+let directoryAuthState = ''
+function acceptDirectoryResult(result: AppAuthResult) {
+  if (!result || !directoryAuthState || result.state !== directoryAuthState || result.appName !== 'fnsdownload' || result.method !== 'pickUserFile') return
+  directoryAuthState = ''
+  if (result.status === 'success' && result.path?.length) directory.value = result.path[0]
+  else if (result.status === 'error') directoryError.value = '目录授权失败，请重试。'
+}
+function directoryMessage(event: MessageEvent) {
+  if (event.origin === location.origin && event.data?.type === 'fnsdownload:directory') acceptDirectoryResult(event.data.result)
+}
+async function chooseDirectory() {
+  if (pickingDirectory.value) return
+  pickingDirectory.value = true
+  directoryError.value = ''
+  try {
+    await fnos.ready()
+    if (fnos.isStandaloneWeb) {
+      if (['localhost','127.0.0.1'].includes(location.hostname)) throw new Error('请在飞牛桌面中打开应用，使用 NAS 的目录选择器。')
+      directoryAuthState = crypto.randomUUID()
+      await fnos.openAppAuth('pickUserFile', {
+        appName:'fnsdownload', directory:true, state:directoryAuthState,
+        redirectUri:base+'/?directory-callback=1', sidebarGroup:['myFiles','otherShare','favorites'],
+      }, {target:'_blank',features:'width=750,height=630'})
+    } else {
+      // The host picker must appear above the native create dialog.
+      createDialog.value?.close()
+      try {
+        const result = await fnos.pickUserFile({directory:true,title:'选择下载保存目录',okText:'保存到此目录',creatable:true,sidebarGroup:['myFiles','otherShare','favorites']})
+        if (result && result.code !== 0) throw new Error(result.msg || '选择目录失败')
+        if (result?.data?.length) directory.value = result.data[0]
+      } finally { createDialog.value?.showModal() }
+    }
+  } catch (e) { directoryError.value = e instanceof Error ? e.message : '无法打开飞牛目录选择器' }
+  finally { pickingDirectory.value = false }
+}
 const filter = ref('all')
 const createDialog = ref<HTMLDialogElement | null>(null)
 const detailsDialog = ref<HTMLDialogElement | null>(null)
@@ -171,8 +210,8 @@ async function action(task: Task, actionName: string) {
   } catch (e) { operationError.value = e instanceof Error ? e.message : '操作失败' }
   finally { pendingTask.value = '' }
 }
-onMounted(() => { refresh(); timer = window.setInterval(refresh, 2500); systemTheme.addEventListener('change',systemThemeChanged) })
-onUnmounted(() => { if (timer) window.clearInterval(timer); window.clearTimeout(notificationTimer); systemTheme.removeEventListener('change',systemThemeChanged) })
+onMounted(() => { refresh(); timer = window.setInterval(refresh, 2500); systemTheme.addEventListener('change',systemThemeChanged); window.addEventListener('message',directoryMessage) })
+onUnmounted(() => { if (timer) window.clearInterval(timer); window.clearTimeout(notificationTimer); systemTheme.removeEventListener('change',systemThemeChanged); window.removeEventListener('message',directoryMessage) })
 </script>
 
 <template>
@@ -196,7 +235,7 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); window.clearTimeout(
         <div class="nav-caption">下载引擎 <span>{{ engines.filter(e => e.ready).length }} 可用</span></div>
         <div v-for="item in engines" :key="item.name" class="engine-item" :title="item.error || '引擎可用'">
           <span class="engine-symbol">{{ item.name.slice(0,1).toUpperCase() }}</span>
-          <span class="engine-name">{{ item.name === 'http' ? 'HTTP / HTTPS' : item.name }}</span>
+          <span class="engine-name">{{ item.name === 'http' ? 'HTTP / HTTPS' : item.name === 'xunlei' ? '迅雷下载引擎' : item.name }}</span>
           <span class="engine-dot" :class="{ready:item.ready}" :aria-label="item.ready ? '可用' : '未连接'"></span>
         </div>
         <p v-if="!engines.length" class="engine-placeholder">{{ loading ? '正在检测引擎…' : '暂无引擎信息' }}</p>
@@ -252,8 +291,8 @@ onUnmounted(() => { if (timer) window.clearInterval(timer); window.clearTimeout(
     <form @submit.prevent="addTask" :aria-busy="submitting">
       <div class="modal-body create-form">
         <label class="url-field"><span>下载链接</span><textarea id="download-url" v-model="url" placeholder="粘贴 HTTP / HTTPS 下载地址" required autofocus :disabled="submitting" rows="3"></textarea><small>目前支持单个 HTTP 或 HTTPS 链接。</small></label>
-        <label><span>下载引擎</span><select v-model="engineName" :disabled="submitting"><option v-for="item in engines.filter(e => e.ready)" :key="item.name" :value="item.name">{{ item.name === 'http' ? 'HTTP / HTTPS' : item.name }}</option></select></label>
-        <label><span>保存子目录 <small>可选</small></span><input v-model="directory" placeholder="例如：软件 / 资料" :disabled="submitting" /><small>留空则保存到默认下载目录。</small></label>
+        <label><span>下载引擎</span><select v-model="engineName" :disabled="submitting"><option v-for="item in engines.filter(e => e.ready)" :key="item.name" :value="item.name">{{ item.name === 'http' ? 'HTTP / HTTPS' : item.name === 'xunlei' ? '迅雷下载引擎' : item.name }}</option></select></label>
+        <div class="directory-field"><span>保存目录</span><div class="directory-controls"><input aria-label="保存目录" :value="directory || '默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory" :disabled="submitting || pickingDirectory">{{ pickingDirectory ? '正在打开…' : '选择目录' }}</button><button v-if="directory" type="button" class="secondary-button" @click="directory=''" :disabled="submitting">重置</button></div><small>通过飞牛选择并授权 NAS 目录，未选择时使用默认目录。</small><p v-if="directoryError" role="alert" class="error-banner">{{ directoryError }}</p></div>
         <div v-if="createError" class="error-box form-message" role="alert">{{ createError }}</div>
         <p v-if="!engines.some(e => e.ready)" class="hint form-message">当前没有可用引擎，请稍后重试。</p>
       </div>

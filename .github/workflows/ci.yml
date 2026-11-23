@@ -24,7 +24,11 @@ jobs:
           chmod +x /usr/local/bin/fnpack
           fnpack --help
       - name: Build native x86_64 FPK payload
-        run: bash ./scripts/build-fpk.sh
+        env:
+          XUNLEI_SDK_ROOT: ${{ github.workspace }}/third_party/xunlei
+        run: |
+          python3 ./scripts/fetch-xunlei-sdk.py
+          bash ./scripts/build-fpk.sh
       - name: Inspect FPK and payload
         run: |
           file dist/fnsdownload-x86_64.fpk

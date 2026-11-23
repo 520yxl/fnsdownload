@@ -38,24 +38,75 @@ type TokenResponse struct {
 	} `json:"data"`
 }
 
-func (c *Client) LoginToken(ctx context.Context, deviceID, version, platform string) (*TokenResponse, error) {
+func (c *Client) Register(ctx context.Context, deviceID, version, platform string) error {
 	body, err := json.Marshal(map[string]string{"device_id": deviceID, "product_version": version, "sdk_platform": platform})
-	if err != nil { return nil, err }
-	path := "/api/v1/auth/token"
+	if err != nil {
+		return err
+	}
+	path := "/api/v1/auth/register"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+path, bytes.NewReader(body))
-	if err != nil { return nil, err }
+	if err != nil {
+		return err
+	}
 	c.sign(req, path, body)
 	client := c.HTTPClient
-	if client == nil { client = &http.Client{Timeout: 15 * time.Second} }
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
 	resp, err := client.Do(req)
-	if err != nil { return nil, err }
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Thunder_auth register HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		Code int `json:"code"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return err
+	}
+	if result.Code != 0 {
+		return fmt.Errorf("Thunder_auth register failed: code=%d", result.Code)
+	}
+	return nil
+}
+
+func (c *Client) LoginToken(ctx context.Context, deviceID, version, platform string) (*TokenResponse, error) {
+	body, err := json.Marshal(map[string]string{"device_id": deviceID, "product_version": version, "sdk_platform": platform})
+	if err != nil {
+		return nil, err
+	}
+	path := "/api/v1/auth/token"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	c.sign(req, path, body)
+	client := c.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
 	defer resp.Body.Close()
 	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil { return nil, err }
-	if resp.StatusCode != http.StatusOK { return nil, fmt.Errorf("Thunder_auth HTTP %d", resp.StatusCode) }
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Thunder_auth HTTP %d", resp.StatusCode)
+	}
 	var result TokenResponse
-	if err := json.Unmarshal(payload, &result); err != nil { return nil, err }
-	if result.Code != 0 || result.Data.Token == "" { return nil, fmt.Errorf("Thunder_auth token unavailable: code=%d", result.Code) }
+	if err := json.Unmarshal(payload, &result); err != nil {
+		return nil, err
+	}
+	if result.Code != 0 || result.Data.Token == "" {
+		return nil, fmt.Errorf("Thunder_auth token unavailable: code=%d", result.Code)
+	}
 	return &result, nil
 }
 
