@@ -20,7 +20,7 @@ import (
 )
 
 type Config struct {
-	AppID, Version, StateDir, DeviceID, AuthURL, SecretFile string
+	AppID, Version, StateDir, DeviceID, AuthURL, SecretFile, BundledSecretFile string
 }
 
 type Engine struct {
@@ -73,7 +73,7 @@ func (e *Engine) authenticate(ctx context.Context) error {
 		if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
 			return errors.New("迅雷授权地址必须是有效的 HTTPS 地址")
 		}
-		secret, err := os.ReadFile(e.cfg.SecretFile)
+		secret, err := readProductSecret(e.cfg.SecretFile, e.cfg.BundledSecretFile)
 		if err != nil {
 			return errors.New("请配置 Thunder_auth 产品 Secret 文件后重启应用")
 		}
@@ -386,4 +386,13 @@ func installationID(path string) (string, error) {
 		return "", closeErr
 	}
 	return id, nil
+}
+
+// A private package may include a default credential. Existing per-device config wins.
+func readProductSecret(primary, bundled string) ([]byte, error) {
+	secret, err := os.ReadFile(primary)
+	if os.IsNotExist(err) && bundled != "" {
+		return os.ReadFile(bundled)
+	}
+	return secret, err
 }

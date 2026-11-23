@@ -58,6 +58,18 @@ mkdir -p "$WORK/app/server" "$WORK/app/www" "$WORK/app/ui/images"
 cp "$ROOT/manifest" "$WORK/manifest"
 cp "$ROOT/config/privilege" "$WORK/config/privilege"
 cp "$ROOT/config/resource" "$WORK/config/resource"
+# Optional private build input; never commit this file or use an official API Key here.
+if [[ -n "${XUNLEI_PRODUCT_SECRET_FILE:-}" ]]; then
+  python3 - "$XUNLEI_PRODUCT_SECRET_FILE" <<'CHECK_SECRET'
+import pathlib,sys
+value=pathlib.Path(sys.argv[1]).read_bytes().strip()
+if len(value)<32 or len(value)>4096 or b'\x00' in value:
+    sys.exit('Invalid product Secret build input')
+CHECK_SECRET
+  mkdir -p "$WORK/app/config"
+  install -m 600 "$XUNLEI_PRODUCT_SECRET_FILE" "$WORK/app/config/thunder-auth.secret"
+fi
+
 cp "$ROOT/app/ui/config" "$WORK/app/ui/config"
 cp "$ROOT/app/ui/images/icon_64.png" "$WORK/app/ui/images/icon_64.png"
 cp "$ROOT/app/ui/images/icon_256.png" "$WORK/app/ui/images/icon_256.png"
@@ -99,6 +111,11 @@ if [[ -n "$SDK_ROOT" ]]; then
 else
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$WORK/app/server/fnsdownload-amd64" ./cmd/fnsdownload
   echo "SDK_BUILD=stub (official SDK not supplied)" > "$DIST/build-info.txt"
+fi
+if [[ -f "$WORK/app/config/thunder-auth.secret" ]]; then
+  echo "PRODUCT_CREDENTIAL=bundled" >> "$DIST/build-info.txt"
+else
+  echo "PRODUCT_CREDENTIAL=external" >> "$DIST/build-info.txt"
 fi
 chmod 755 "$WORK/app/server/fnsdownload-amd64"
 

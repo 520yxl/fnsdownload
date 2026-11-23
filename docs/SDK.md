@@ -44,3 +44,21 @@ FPK 将运行库打包到 `server/lib/libdk.so`，可执行文件 RUNPATH 为 `$
 原生测试验证真实库的版本查询、初始化和释放，不代表真实账号登录或下载通过。
 NAS 上仍需验证登录、HTTP(S) 下载、暂停/继续、删除保留文件、升级后任务恢复。
 不承诺 BT、磁力链、ed2k、ARM64 或未经实机验证的速度。
+
+
+## 私有内置版
+
+可选地将产品 Secret 作为构建输入：
+
+```bash
+XUNLEI_PRODUCT_SECRET_FILE=/private/thunder-auth.secret XUNLEI_SDK_ROOT="$PWD/third_party/xunlei" bash scripts/build-fpk.sh
+```
+
+私有包将该文件放在 `target/config/thunder-auth.secret`，权限 0600。应用先读取
+`$TRIM_PKGVAR/config/thunder-auth.secret`；该文件不存在时才读取包内默认值。
+已有配置不会被覆盖；权限错误或无效配置不会静默回退。Token 仍从授权中心动态获取，不内置 Token 或官方 API Key。
+
+普通 PR/推送 CI 不注入产品凭据。手动 workflow_dispatch 只有启用 `bundle_product_secret` 时才使用
+GitHub Actions 加密 Secret `THUNDER_AUTH_PRODUCT_SECRET`；配置此 Secret 需单独授权。
+该构建产物包含可提取的产品凭据，不自动发布 Release，Actions artifact 仅保留 1 天。
+凭据值不能写入源码、工作流输入、日志或文档。

@@ -5,6 +5,11 @@ on:
   pull_request:
     branches: [develop, main]
   workflow_dispatch:
+    inputs:
+      bundle_product_secret:
+        description: Build a private FPK with the configured product credential
+        type: boolean
+        default: false
 jobs:
   test-and-package:
     runs-on: ubuntu-22.04
@@ -30,7 +35,15 @@ jobs:
       - name: Build native x86_64 FPK payload
         env:
           XUNLEI_SDK_ROOT: ${{ github.workspace }}/third_party/xunlei
+          BUNDLE_PRODUCT_SECRET: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_product_secret || false }}
+          THUNDER_AUTH_PRODUCT_SECRET: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_product_secret && secrets.THUNDER_AUTH_PRODUCT_SECRET || '' }}
         run: |
+          if [[ "$BUNDLE_PRODUCT_SECRET" == "true" ]]; then
+            [[ -n "$THUNDER_AUTH_PRODUCT_SECRET" ]] || { echo 'Product credential is not configured'; exit 1; }
+            umask 077
+            export XUNLEI_PRODUCT_SECRET_FILE="$RUNNER_TEMP/thunder-auth.secret"
+            printf '%s' "$THUNDER_AUTH_PRODUCT_SECRET" > "$XUNLEI_PRODUCT_SECRET_FILE"
+          fi
           python3 ./scripts/fetch-xunlei-sdk.py
           bash ./scripts/build-fpk.sh
       - name: Inspect FPK and payload
@@ -40,7 +53,8 @@ jobs:
           cat dist/app-files.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: fnsdownload-x86_64-${{ github.sha }}
+          name: fnsdownload-x86_64-${{ inputs.bundle_product_secret && 'private-' || '' }}${{ github.sha }}
+          retention-days: 1
           path: |
             dist/fnsdownload-x86_64.fpk
             dist/build-info.txt
@@ -48,4 +62,3 @@ jobs:
             dist/app-files.txt
             dist/SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 14

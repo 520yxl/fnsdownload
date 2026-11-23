@@ -9,6 +9,7 @@ downloads/
 dist/
 .fpk-work-root/
 *.env
+**/thunder-auth.secret
 
 third_party/xunlei/include/
 third_party/xunlei/lib/

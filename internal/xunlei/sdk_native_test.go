@@ -11,7 +11,7 @@ func TestOfficialNativeRuntime(t *testing.T) {
 	}
 	t.Logf("Official libdk runtime: %s", version)
 	client := New()
-	if err := client.Init("eGwtQ28zcDExODg2AAAAA24uAAA=", "0.5.17", t.TempDir()); err != nil {
+	if err := client.Init("eGwtQ28zcDExODg2AAAAA24uAAA=", "0.5.18", t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if err := client.Close(); err != nil {

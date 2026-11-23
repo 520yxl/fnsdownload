@@ -3,6 +3,7 @@ package xunleiengine
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,6 +11,29 @@ import (
 	"github.com/520yxl/fnsdownload/internal/engine"
 	"github.com/520yxl/fnsdownload/internal/xunlei"
 )
+
+func TestBundledProductSecretFallback(t *testing.T) {
+	dir := t.TempDir()
+	primary := filepath.Join(dir, "private-secret")
+	bundled := filepath.Join(dir, "bundled-secret")
+	if err := os.WriteFile(bundled, []byte("bundled-test-credential"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readProductSecret(primary, bundled)
+	if err != nil || string(got) != "bundled-test-credential" {
+		t.Fatal("missing per-device config did not use bundle")
+	}
+	if err := os.WriteFile(primary, []byte("configured-test-credential"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = readProductSecret(primary, bundled)
+	if err != nil || string(got) != "configured-test-credential" {
+		t.Fatal("bundle overrode existing config")
+	}
+	if _, err := readProductSecret(dir, bundled); err == nil {
+		t.Fatal("invalid private config silently fell back")
+	}
+}
 
 type fakeSDK struct {
 	state           xunlei.TaskState
