@@ -23,6 +23,7 @@ const (
 )
 
 type Task struct {
+	ElapsedMS      int64      `json:"elapsed_ms"`
 	Retryable      bool       `json:"retryable,omitempty"`
 	RetryCount     int        `json:"retry_count,omitempty"`
 	RetryAt        *time.Time `json:"retry_at,omitempty"`

@@ -20,3 +20,11 @@ A NAS-persisted reserve setting defaults to 512 MB (64–102400 MB). Before each
 Insufficient space leaves tasks queued with an actionable reason; they can start after space is freed. An unreadable destination or missing volume blocks new starts with a distinct warning. While registered tasks are active, the worker monitors their destinations even if the browser is closed. Falling below the reserve requests pause only for this application's tasks and preserves partial files. Paused tasks require manual resume; a failed pause request is displayed as a warning rather than reported as a successful pause. Other applications' task IDs and processes are not controlled.
 
 CI tests cover same-device reservations across directories, independent devices, unknown sizes, read failures, low-space pause, explicit resume and native filesystem queries. Physical fnOS verification is still required.
+
+## Task creation and file access
+
+New downloads show only URLs by default. Advanced settings expand to engine selection, authorized destination selection and Xunlei single-file HTTP headers. Engine selection defaults to automatic on each new dialog; explicit choices apply to every submitted URL. Unavailable engines are disabled. Switching away from Xunlei-capable modes omits hidden request headers. File-manager actions in task rows and details use the official TrimApp.openFileManager API and require the fnOS host; standalone previews show a clear error.
+
+## Download time
+
+Task payloads persist elapsed_ms in SQLite. The backend queue checkpoints running tasks even without a browser; pauses, queue waits, retry delays and application downtime do not accrue time. Fresh engine snapshots retain the persisted application counter. Sampling uses observed running transitions (normally once a second); abrupt process termination can lose the last uncommitted sample. Existing records start accumulating after this update; historical elapsed time cannot be recovered. Completion keeps accumulated time, while deletion removes it. The UI estimates remaining time from remaining bytes/current speed only for running tasks, and shows calculating when size or speed is unknown. ETA fluctuates with speed and is not a completion guarantee.

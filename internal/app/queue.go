@@ -135,7 +135,7 @@ func (h *Handler) dispatchQueue(ctx context.Context) {
 		if task.Status == engine.StatusCompleted || task.Status == engine.StatusRemoved {
 			delete(h.spacePaused, task.ID)
 		}
-		if task.Status != stored[i].Status || task.Error != stored[i].Error {
+		if task.Status == engine.StatusRunning || stored[i].Status == engine.StatusRunning || task.Status != stored[i].Status || task.Error != stored[i].Error {
 			_ = h.store.Upsert(ctx, task)
 		}
 		stored[i] = task

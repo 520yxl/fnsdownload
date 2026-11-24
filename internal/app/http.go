@@ -167,7 +167,7 @@ func (h *Handler) routes() {
 	h.settingsRoutes()
 	h.xunleiRoutes()
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.24", "runtime": "go", "database": "sqlite"})
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.25", "runtime": "go", "database": "sqlite"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"download_dir": filepath.Clean(h.cfg.DownloadDir), "data_dir": filepath.Clean(h.cfg.DataDir), "database": "sqlite"})
@@ -225,8 +225,10 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 				task.SpeedBytes = 0
 			}
 			task = h.storageMetadata(h.retryMetadata(task))
+			if saved, err := h.store.Save(r.Context(), task); err == nil {
+				task = saved
+			}
 			out[task.ID] = task
-			_ = h.store.Upsert(r.Context(), task)
 		}
 	}
 	stored, err := h.store.List(r.Context())
