@@ -308,6 +308,12 @@ func (e *Engine) update(task engine.Task) (engine.Task, error) {
 	task.Error = ""
 	if state.TaskErrorCode != 0 || state.TaskTokenError != 0 {
 		task.Error = fmt.Sprintf("迅雷任务错误 %d，授权状态 %d", state.TaskErrorCode, state.TaskTokenError)
+		if state.TaskErrorCode == 111176 {
+			task.Error += "（长时间未收到数据）"
+		}
+		if state.TaskErrorCode == 119212 {
+			task.Error += "（下载超时）"
+		}
 	}
 	task.UpdatedAt = time.Now().UTC()
 	e.tasks[task.ID] = task

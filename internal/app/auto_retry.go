@@ -13,7 +13,7 @@ type retryState struct {
 	Next  *time.Time
 }
 
-// Unknown SDK failures deliberately require manual intervention.
+// Only documented transient SDK failures are retried or switched.
 func transientDownloadFailure(task engine.Task) bool {
 	if task.Status != engine.StatusFailed {
 		return false
@@ -24,6 +24,13 @@ func transientDownloadFailure(task engine.Task) bool {
 			return false
 		}
 		return code == 2 || code == 5 || code == 6 || code == 19 || code == 29
+	}
+	if task.Engine == "xunlei" {
+		var code, token int
+		if _, err := fmt.Sscanf(task.Error, "迅雷任务错误 %d，授权状态 %d", &code, &token); err != nil {
+			return false
+		}
+		return token == 0 && (code == 111176 || code == 119212)
 	}
 	if task.Engine != "http" {
 		return false
@@ -95,7 +102,7 @@ func (h *Handler) prepareAutoRetries(ctx context.Context, tasks []engine.Task, l
 		if now.Before(*state.Next) {
 			continue
 		}
-		e, ok := h.engines.Get(task.Engine)
+		e, ok := h.engineFor(task)
 		if !ok {
 			continue
 		}

@@ -79,7 +79,15 @@ func (h *Handler) xunleiRoutes() {
 			writeError(w, 503, err.Error())
 			return
 		}
-		info, err := e.Details(r.Context(), r.PathValue("id"))
+		id := r.PathValue("id")
+		if task, getErr := h.store.Get(r.Context(), id); getErr == nil {
+			if task.Engine != "xunlei" {
+				writeError(w, 400, "当前任务未使用迅雷引擎")
+				return
+			}
+			id = nativeTaskID(task)
+		}
+		info, err := e.Details(r.Context(), id)
 		if err != nil {
 			writeError(w, 400, err.Error())
 			return
@@ -93,6 +101,8 @@ func (h *Handler) xunleiRoutes() {
 		writeError(w, 400, "请使用独立任务接口批量添加链接")
 	})
 	h.mux.HandleFunc("POST /api/xunlei/recover", func(w http.ResponseWriter, r *http.Request) {
+		h.queueMu.Lock()
+		defer h.queueMu.Unlock()
 		if !requireGatewayUser(w, r) {
 			return
 		}
@@ -118,7 +128,21 @@ func (h *Handler) xunleiRoutes() {
 			writeError(w, 400, err.Error())
 			return
 		}
+		savedTasks, listErr := h.store.List(r.Context())
+		if listErr != nil {
+			writeError(w, 500, "无法读取任务记录")
+			return
+		}
+		bindings := make(map[string]engine.Task)
+		for _, saved := range savedTasks {
+			if saved.Engine == "xunlei" {
+				bindings[nativeTaskID(saved)] = saved
+			}
+		}
 		for _, task := range tasks {
+			if saved, ok := bindings[task.ID]; ok {
+				task = bindTask(task, saved)
+			}
 			if err = h.store.Upsert(r.Context(), task); err != nil {
 				writeError(w, 500, "无法保存恢复的任务")
 				return

@@ -142,6 +142,16 @@ func (s *Store) Upsert(ctx context.Context, task engine.Task) error {
 	return err
 }
 
+func (s *Store) Get(ctx context.Context, id string) (engine.Task, error) {
+	var payload []byte
+	if err := s.db.QueryRowContext(ctx, "SELECT payload FROM download_tasks WHERE id = ?", id).Scan(&payload); err != nil {
+		return engine.Task{}, err
+	}
+	var task engine.Task
+	err := json.Unmarshal(payload, &task)
+	return task, err
+}
+
 func (s *Store) List(ctx context.Context) ([]engine.Task, error) {
 	rows, err := s.db.QueryContext(ctx, "SELECT payload FROM download_tasks ORDER BY updated_at DESC")
 	if err != nil {

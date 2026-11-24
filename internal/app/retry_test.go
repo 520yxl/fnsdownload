@@ -53,6 +53,11 @@ func TestRetryUsesExistingTaskAndQueue(t *testing.T) {
 	}
 	defer db.Close()
 	e := &queueTestEngine{name: "http", tasks: map[string]engine.Task{"failed": {ID: "failed", Engine: "http", Status: engine.StatusFailed, Error: "old error"}, "done": {ID: "done", Engine: "http", Status: engine.StatusCompleted}}}
+	for _, task := range e.tasks {
+		if err := db.Upsert(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+	}
 	m := engine.NewManager()
 	m.Register(e)
 	h := &Handler{store: db, engines: m}
@@ -71,7 +76,13 @@ func TestRetryUsesExistingTaskAndQueue(t *testing.T) {
 		}
 	}
 	items, _ := db.List(ctx)
-	if len(items) != 1 || items[0].ID != "failed" || items[0].Status != engine.StatusQueued || items[0].Error != "" {
+	var retried engine.Task
+	for _, task := range items {
+		if task.ID == "failed" {
+			retried = task
+		}
+	}
+	if len(items) != 2 || retried.ID != "failed" || retried.Status != engine.StatusQueued || retried.Error != "" {
 		t.Fatal("retry created a replacement or lost queue state", items)
 	}
 	if len(e.starts) != 0 {

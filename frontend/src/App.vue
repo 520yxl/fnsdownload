@@ -4,7 +4,7 @@ import { TrimApp, type AppAuthResult } from '@trimjs/web-app'
 
 type Engine = { name: string; ready: boolean; error?: string }
 type Task = {
-  elapsed_ms?: number; id: string; engine: string; source: string; name: string; directory: string
+  auto_engine?: boolean; headers_required?: boolean; tried_engines?: string[]; engine_note?: string; elapsed_ms?: number; id: string; engine: string; source: string; name: string; directory: string
   status: string; total_bytes: number; completed_bytes: number; speed_bytes: number; error?: string; retry_count?: number; retry_at?: string; retryable?: boolean
 }
 function formatDuration(seconds: number) {
@@ -274,7 +274,7 @@ async function api(path: string, init?: RequestInit) {
   return response.json()
 }
 function needsSync(t: Task) {
- return t.status === 'running' || t.status === 'queued' || (!!t.retryable && t.status === 'failed' && (t.retry_count || 0) < preferences.value.auto_retry)
+ return t.status === 'running' || t.status === 'queued' || (!!t.retryable && t.status === 'failed' && ((t.retry_count || 0) < preferences.value.auto_retry || (t.auto_engine && !t.headers_required && engines.value.some(e => e.ready && !(t.tried_engines || [t.engine]).includes(e.name)))))
 }
 function scheduleRefresh() {
   window.clearTimeout(timer)
@@ -468,6 +468,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
             <div class="task-meta"><span>{{ task.engine }}</span><span>{{ formatBytes(task.completed_bytes) }} / {{ task.total_bytes ? formatBytes(task.total_bytes) : '大小未知' }}</span><span v-if="task.status==='running'">{{ formatBytes(task.speed_bytes) }}/s</span><span>已下载耗时 {{ formatDuration((task.elapsed_ms || 0)/1000) }}</span><span v-if="task.status==='running'">预计剩余 {{ remainingTime(task) }}</span></div>
             <div class="progress-line"><div class="progress" :class="task.status" role="progressbar" :aria-label="task.name + '下载进度'" :aria-valuenow="task.total_bytes>0 ? percent(task) : undefined" aria-valuemin="0" aria-valuemax="100"><i :style="{width: percent(task)+'%'}"></i></div><span>{{ task.total_bytes>0 ? percent(task)+'%' : '大小未知' }}</span></div>
             <small v-if="task.retry_at" class="hint">计划于 {{ new Date(task.retry_at).toLocaleTimeString() }} 自动重试 · 已重试 {{ task.retry_count || 0 }}/{{ preferences.auto_retry }} 次 <button class="text-button" @click="action(task,'cancel-retry')" :disabled="!!pendingTask || bulkBusy">取消自动重试</button></small>
+            <small v-if="task.engine_note" class="hint">{{ task.engine_note }}</small>
             <small v-if="task.error" class="task-error">{{ task.error }}</small>
           </div>
           <div class="task-actions">
@@ -517,11 +518,12 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
     <form @submit.prevent="addTask()" :aria-busy="submitting">
       <div class="modal-body create-form">
         <label class="url-field"><span>下载链接</span><textarea id="download-url" v-model="url" placeholder="粘贴 HTTP / HTTPS 下载地址" required autofocus :disabled="submitting" rows="3"></textarea><small>支持批量下载，每行一个链接。</small></label>
+        <div class="directory-field"><span>保存目录</span><div class="directory-controls"><input aria-label="保存目录" :value="directory || '默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory()" :disabled="submitting || pickingDirectory">{{ pickingDirectory ? '正在打开…' : '选择目录' }}</button><button v-if="directory" type="button" class="secondary-button" @click="directory=''" :disabled="submitting">重置</button></div><small>通过飞牛选择并授权 NAS 目录，未选择时使用默认目录。</small><p v-if="directoryError" role="alert" class="error-banner">{{ directoryError }}</p></div>
         <div class="create-advanced">
           <button type="button" class="advanced-toggle" :aria-expanded="createAdvanced" aria-controls="create-advanced-options" @click="createAdvanced=!createAdvanced"><span>高级设置</span><svg viewBox="0 0 24 24" :class="{expanded:createAdvanced}" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg></button>
           <div v-show="createAdvanced" id="create-advanced-options" class="advanced-options">
-            <label><span>下载引擎</span><select v-model="selectedEngine" :disabled="submitting" aria-label="下载引擎"><option value="auto">自动智能选择（推荐）</option><option v-for="choice in engineChoices" :key="choice.name" :value="choice.name" :disabled="!engines.some(e => e.name===choice.name && e.ready)">{{ choice.label }}{{ engines.some(e => e.name===choice.name && e.ready) ? '' : '（不可用）' }}</option></select><small>{{ selectedEngine==='auto' ? '根据可用状态与任务要求自动选择，优先迅雷，其次 aria2、HTTP。' : '本次下载使用指定引擎，批量链接也使用此引擎。' }}</small></label>
-        <div class="directory-field"><span>保存目录</span><div class="directory-controls"><input aria-label="保存目录" :value="directory || '默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory()" :disabled="submitting || pickingDirectory">{{ pickingDirectory ? '正在打开…' : '选择目录' }}</button><button v-if="directory" type="button" class="secondary-button" @click="directory=''" :disabled="submitting">重置</button></div><small>通过飞牛选择并授权 NAS 目录，未选择时使用默认目录。</small><p v-if="directoryError" role="alert" class="error-banner">{{ directoryError }}</p></div>
+            <label><span>下载引擎</span><select v-model="selectedEngine" :disabled="submitting" aria-label="下载引擎"><option value="auto">自动智能选择（推荐）</option><option v-for="choice in engineChoices" :key="choice.name" :value="choice.name" :disabled="!engines.some(e => e.name===choice.name && e.ready)">{{ choice.label }}{{ engines.some(e => e.name===choice.name && e.ready) ? '' : '（不可用）' }}</option></select><small>{{ selectedEngine==='auto' ? '优先迅雷，其次 aria2、HTTP；下载失败或连续 2 分钟无进展时自动尝试其他可用引擎。' : '本次下载使用指定引擎，批量链接也使用此引擎。' }}</small></label>
+
         <template v-if="supportsHeaders">
           <label><span>自定义 HTTP 请求头（单文件任务）</span><textarea v-model="requestHeaders" rows="2" :disabled="submitting" placeholder="Referer: https://example.com/" /><small>每行一个 名称: 值。请求头不保存到应用数据库。</small></label>
         </template>
@@ -545,6 +547,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
         <div class="detail-progress"><div class="progress" :class="detailTask.status"><i :style="{width:percent(detailTask)+'%'}"></i></div><span>{{ detailTask.total_bytes>0 ? percent(detailTask)+'%' : '大小未知' }}</span></div>
         <dl class="detail-grid"><div><dt>已下载耗时</dt><dd>{{ formatDuration((detailTask.elapsed_ms || 0)/1000) }}</dd></div><div v-if="detailTask.status==='running'"><dt>预计剩余时间</dt><dd>{{ remainingTime(detailTask) }}</dd></div><div><dt>已下载 / 总大小</dt><dd>{{ formatBytes(detailTask.completed_bytes) }} / {{ detailTask.total_bytes>0 ? formatBytes(detailTask.total_bytes) : '大小未知' }}</dd></div><div><dt>下载速度</dt><dd>{{ formatBytes(detailTask.status==='running' ? detailTask.speed_bytes : 0) }}/s</dd></div><div><dt>下载引擎</dt><dd>{{ detailTask.engine }}</dd></div><div class="detail-wide"><dt>保存位置</dt><dd>{{ detailTask.directory || '默认下载目录' }}</dd></div><div class="detail-wide"><dt>源链接</dt><dd class="source-text">{{ detailTask.source }}</dd></div></dl>
         <dl v-if="sdkDetails" class="detail-grid"><div><dt>源站流量</dt><dd>{{ formatBytes(sdkDetails.traffic.origin) }}</dd></div><div><dt>P2P 流量</dt><dd>{{ formatBytes(sdkDetails.traffic.p2p) }}</dd></div><div><dt>P2S 流量</dt><dd>{{ formatBytes(sdkDetails.traffic.p2s) }}</dd></div><div v-if="sdkDetails.completed"><dt>完成时间</dt><dd>{{ new Date(sdkDetails.completed*1000).toLocaleString() }}</dd></div></dl>
+        <p v-if="detailTask.engine_note" class="hint">{{ detailTask.engine_note }}</p>
         <p v-if="detailsError" class="error-box" role="alert">{{ detailsError }}</p>
         <div v-if="detailTask.error || operationError" class="error-box" role="alert">{{ operationError || detailTask.error }}</div>
       </div>

@@ -34,6 +34,11 @@ func (h *Handler) startQueue() {
 
 // Caller holds queueMu. Waiting tasks remain paused inside their engines.
 func (h *Handler) enqueue(ctx context.Context, e engine.Engine, id string) error {
+	if saved, err := h.store.Get(ctx, id); err == nil {
+		if bound, ok := h.engineFor(saved); ok {
+			e = bound
+		}
+	}
 	task, err := e.Get(ctx, id)
 	if err != nil {
 		return err
@@ -84,7 +89,7 @@ func (h *Handler) dispatchQueue(ctx context.Context) {
 		if _, waiting := h.queue[task.ID]; waiting {
 			continue
 		}
-		e, ok := h.engines.Get(task.Engine)
+		e, ok := h.engineFor(task)
 		if !ok {
 			continue
 		}
@@ -137,6 +142,14 @@ func (h *Handler) dispatchQueue(ctx context.Context) {
 		}
 		if task.Status == engine.StatusRunning || stored[i].Status == engine.StatusRunning || task.Status != stored[i].Status || task.Error != stored[i].Error {
 			_ = h.store.Upsert(ctx, task)
+		}
+		if h.shouldFallback(task, time.Now()) {
+			if replacement, switched := h.fallbackTask(ctx, task); switched {
+				if task.Status == engine.StatusRunning || task.Status == engine.StatusQueued {
+					active--
+				}
+				task = replacement
+			}
 		}
 		stored[i] = task
 	}

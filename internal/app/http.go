@@ -21,6 +21,7 @@ import (
 )
 
 type Handler struct {
+	progressWatch map[string]progressWatch
 	spaceProbe    func(string) (volumeSpace, error)
 	spaceWait     map[string]string
 	spacePaused   map[string]string
@@ -103,19 +104,28 @@ func (h *Handler) restoreTasks() error {
 		h.retryBlocked[task.ID] = true
 		task.RetryAt = nil
 		if task.Engine == "aria2" && h.aria2Engine != nil {
-			restored := h.aria2Engine.RestoreTask(task)
+			native := task
+			native.ID = nativeTaskID(task)
+			native.NativeID = ""
+			restored := bindTask(h.aria2Engine.RestoreTask(native), task)
 			if err := h.store.Upsert(ctx, restored); err != nil {
 				return err
 			}
 		}
 		if task.Engine == "xunlei" {
-			restored := h.xunleiEngine.RestoreTask(task)
+			native := task
+			native.ID = nativeTaskID(task)
+			native.NativeID = ""
+			restored := bindTask(h.xunleiEngine.RestoreTask(native), task)
 			if err := h.store.Upsert(ctx, restored); err != nil {
 				return err
 			}
 		}
 		if task.Engine == "http" {
-			restored := h.httpEngine.RestoreTask(task)
+			native := task
+			native.ID = nativeTaskID(task)
+			native.NativeID = ""
+			restored := bindTask(h.httpEngine.RestoreTask(native), task)
 			if err := h.store.Upsert(ctx, restored); err != nil {
 				return err
 			}
@@ -135,25 +145,31 @@ func (h *Handler) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	var first error
-	for _, name := range h.engines.Names() {
-		e, _ := h.engines.Get(name)
-		tasks, err := e.List(ctx)
+	stored, listErr := h.store.List(ctx)
+	if listErr != nil {
+		first = listErr
+	}
+	for _, saved := range stored {
+		e, ok := h.engineFor(saved)
+		if !ok {
+			continue
+		}
+		task, err := e.Get(ctx, saved.ID)
 		if err != nil {
 			continue
 		}
-		for _, task := range tasks {
-			if task.Status == engine.StatusRunning || task.Status == engine.StatusQueued {
-				if err := e.Pause(ctx, task.ID); err != nil && first == nil {
-					first = err
-				}
-				task.Status = engine.StatusPaused
-				task.SpeedBytes = 0
-			}
-			if err := h.store.Upsert(ctx, task); err != nil && first == nil {
+		if task.Status == engine.StatusRunning || task.Status == engine.StatusQueued {
+			if err := e.Pause(ctx, task.ID); err != nil && first == nil {
 				first = err
 			}
+			task.Status = engine.StatusPaused
+			task.SpeedBytes = 0
+		}
+		if err := h.store.Upsert(ctx, task); err != nil && first == nil {
+			first = err
 		}
 	}
+
 	if err := h.engines.Close(); err != nil && first == nil {
 		first = err
 	}
@@ -167,7 +183,7 @@ func (h *Handler) routes() {
 	h.settingsRoutes()
 	h.xunleiRoutes()
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.25", "runtime": "go", "database": "sqlite"})
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.26", "runtime": "go", "database": "sqlite"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"download_dir": filepath.Clean(h.cfg.DownloadDir), "data_dir": filepath.Clean(h.cfg.DataDir), "database": "sqlite"})
@@ -207,6 +223,15 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 	h.queueMu.Lock()
 	defer h.queueMu.Unlock()
 	out := make(map[string]engine.Task)
+	savedTasks, err := h.store.List(r.Context())
+	if err != nil {
+		writeError(w, 500, "无法读取任务记录")
+		return
+	}
+	bindings := make(map[string]engine.Task, len(savedTasks))
+	for _, saved := range savedTasks {
+		bindings[saved.Engine+"/"+nativeTaskID(saved)] = saved
+	}
 	for _, name := range h.engines.Names() {
 		e, _ := h.engines.Get(name)
 		items, err := e.List(r.Context())
@@ -214,6 +239,11 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, task := range items {
+			saved, known := bindings[name+"/"+task.ID]
+			if !known {
+				continue
+			}
+			task = bindTask(task, saved)
 			if _, waiting := h.queue[task.ID]; waiting {
 				task.Status = engine.StatusQueued
 				task.Error = ""
@@ -288,7 +318,8 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
-	if input.Engine == "" || input.Engine == "auto" {
+	automatic := input.Engine == "" || input.Engine == "auto"
+	if automatic {
 		input.Engine = h.autoEngine(r.Context(), len(input.Headers) > 0)
 		if input.Engine == "" {
 			writeError(w, 503, "当前没有满足任务要求的可用下载引擎")
@@ -325,6 +356,10 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
+	task.AutoEngine = automatic
+	task.HeadersRequired = len(input.Headers) > 0
+	task.TriedEngines = []string{task.Engine}
+	task.FallbackRoot = dir
 	if err = h.store.Upsert(r.Context(), task); err != nil {
 		_ = e.Delete(r.Context(), task.ID, false)
 		writeError(w, 500, "could not persist download task")
@@ -349,7 +384,7 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if updated, getErr := e.Get(r.Context(), task.ID); getErr == nil {
-		task = updated
+		task = bindTask(updated, task)
 	}
 	if _, waiting := h.queue[task.ID]; waiting {
 		task.Status = engine.StatusQueued
@@ -366,18 +401,17 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 	h.queueMu.Lock()
 	defer h.queueMu.Unlock()
 	id, action := r.PathValue("id"), r.PathValue("action")
-	var selected engine.Engine
-	for _, name := range h.engines.Names() {
-		e, _ := h.engines.Get(name)
-		if _, err := e.Get(r.Context(), id); err == nil {
-			selected = e
-			break
-		}
-	}
-	if selected == nil {
+	saved, getErr := h.store.Get(r.Context(), id)
+	if getErr != nil {
 		writeError(w, 404, "task not found")
 		return
 	}
+	selected, ok := h.engineFor(saved)
+	if !ok {
+		writeError(w, 404, "task engine not found")
+		return
+	}
+
 	var err error
 	switch action {
 	case "cancel-retry":
@@ -419,6 +453,7 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 		delete(h.spacePaused, id)
 	}
 	if action == "pause" || action == "delete" || action == "delete-files" {
+		delete(h.progressWatch, id)
 		delete(h.spaceWait, id)
 		delete(h.spacePaused, id)
 		if h.retryBlocked == nil {
