@@ -46,7 +46,7 @@ func TestAutomaticRetryDelayBudgetAndCancellation(t *testing.T) {
 	e := &queueTestEngine{name: "http", tasks: map[string]engine.Task{"job": {ID: "job", Engine: "http", Status: engine.StatusFailed, Error: "HTTP status 503 Service Unavailable"}}}
 	m := engine.NewManager()
 	m.Register(e)
-	h := &Handler{cfg: Config{DataDir: dir}, store: db, engines: m}
+	h := &Handler{cfg: Config{DataDir: dir}, store: db, engines: m, spaceProbe: func(string) (volumeSpace, error) { return volumeSpace{Available: 1 << 40, Volume: "test"}, nil }}
 	task := e.tasks["job"]
 	if err := db.Upsert(ctx, task); err != nil {
 		t.Fatal(err)

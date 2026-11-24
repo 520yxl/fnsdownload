@@ -21,6 +21,9 @@ import (
 )
 
 type Handler struct {
+	spaceProbe    func(string) (volumeSpace, error)
+	spaceWait     map[string]string
+	spacePaused   map[string]string
 	retryStates   map[string]retryState
 	retryBlocked  map[string]bool
 	queueFailures map[string]string
@@ -164,7 +167,7 @@ func (h *Handler) routes() {
 	h.settingsRoutes()
 	h.xunleiRoutes()
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.23", "runtime": "go", "database": "sqlite"})
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.24", "runtime": "go", "database": "sqlite"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"download_dir": filepath.Clean(h.cfg.DownloadDir), "data_dir": filepath.Clean(h.cfg.DataDir), "database": "sqlite"})
@@ -221,7 +224,7 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 				task.Error = reason
 				task.SpeedBytes = 0
 			}
-			task = h.retryMetadata(task)
+			task = h.storageMetadata(h.retryMetadata(task))
 			out[task.ID] = task
 			_ = h.store.Upsert(r.Context(), task)
 		}
@@ -230,7 +233,7 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		for _, task := range stored {
 			if _, ok := out[task.ID]; !ok {
-				out[task.ID] = h.retryMetadata(task)
+				out[task.ID] = h.storageMetadata(h.retryMetadata(task))
 			}
 		}
 	}
@@ -410,8 +413,12 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 	if action == "resume" || action == "retry" {
 		delete(h.retryStates, id)
 		delete(h.retryBlocked, id)
+		delete(h.spaceWait, id)
+		delete(h.spacePaused, id)
 	}
 	if action == "pause" || action == "delete" || action == "delete-files" {
+		delete(h.spaceWait, id)
+		delete(h.spacePaused, id)
 		if h.retryBlocked == nil {
 			h.retryBlocked = make(map[string]bool)
 		}
@@ -432,7 +439,7 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 			task.Status = engine.StatusQueued
 			task.Error = ""
 		}
-		task = h.retryMetadata(task)
+		task = h.storageMetadata(h.retryMetadata(task))
 		_ = h.store.Upsert(r.Context(), task)
 	}
 	w.WriteHeader(http.StatusNoContent)

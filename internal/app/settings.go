@@ -9,6 +9,7 @@ import (
 )
 
 type appSettings struct {
+	DiskReserveMB int    `json:"disk_reserve_mb"`
 	AutoRetry     int    `json:"auto_retry"`
 	MaxConcurrent int    `json:"max_concurrent"`
 	Directory     string `json:"directory"`
@@ -17,7 +18,7 @@ type appSettings struct {
 }
 
 func (h *Handler) readSettings() (appSettings, error) {
-	value := appSettings{Interval: 2500, Theme: "auto", MaxConcurrent: 5}
+	value := appSettings{Interval: 2500, Theme: "auto", MaxConcurrent: 5, DiskReserveMB: 512}
 	data, err := os.ReadFile(filepath.Join(h.cfg.DataDir, "settings.json"))
 	if os.IsNotExist(err) {
 		return value, nil
@@ -31,6 +32,9 @@ func (h *Handler) readSettings() (appSettings, error) {
 	return value, validateAppSettings(value)
 }
 func validateAppSettings(v appSettings) error {
+	if v.DiskReserveMB < 64 || v.DiskReserveMB > 102400 {
+		return errors.New("磁盘保留空间必须为 64 到 102400 MB")
+	}
 	if v.AutoRetry < 0 || v.AutoRetry > 5 {
 		return errors.New("自动重试次数必须为 0 到 5")
 	}
@@ -67,6 +71,7 @@ func (h *Handler) settingsRoutes() {
 			return
 		}
 		var patch struct {
+			DiskReserveMB *int    `json:"disk_reserve_mb"`
 			AutoRetry     *int    `json:"auto_retry"`
 			MaxConcurrent *int    `json:"max_concurrent"`
 			Directory     *string `json:"directory"`
@@ -101,6 +106,9 @@ func (h *Handler) settingsRoutes() {
 			} else {
 				value.Directory = ""
 			}
+		}
+		if patch.DiskReserveMB != nil {
+			value.DiskReserveMB = *patch.DiskReserveMB
 		}
 		if patch.AutoRetry != nil {
 			value.AutoRetry = *patch.AutoRetry

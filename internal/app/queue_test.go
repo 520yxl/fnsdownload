@@ -38,6 +38,17 @@ func (e *queueTestEngine) Start(_ context.Context, id string) error {
 	return nil
 }
 
+func (e *queueTestEngine) Pause(_ context.Context, id string) error {
+	t, ok := e.tasks[id]
+	if !ok {
+		return engine.ErrNotFound
+	}
+	t.Status = engine.StatusPaused
+	t.SpeedBytes = 0
+	e.tasks[id] = t
+	return nil
+}
+
 func TestGlobalQueueAcrossEngines(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -54,7 +65,7 @@ func TestGlobalQueueAcrossEngines(t *testing.T) {
 	manager := engine.NewManager()
 	manager.Register(a)
 	manager.Register(b)
-	h := &Handler{cfg: Config{DataDir: dir}, store: db, engines: manager}
+	h := &Handler{cfg: Config{DataDir: dir}, store: db, engines: manager, spaceProbe: func(string) (volumeSpace, error) { return volumeSpace{Available: 1 << 40, Volume: "test"}, nil }}
 	now := time.Now()
 	for i, e := range []*queueTestEngine{a, b} {
 		id := e.name
@@ -108,7 +119,7 @@ func TestQueueFailureDoesNotOccupySlot(t *testing.T) {
 	a := &queueTestEngine{name: "http", tasks: map[string]engine.Task{}, fail: true}
 	manager := engine.NewManager()
 	manager.Register(a)
-	h := &Handler{cfg: Config{DataDir: dir}, store: db, engines: manager}
+	h := &Handler{cfg: Config{DataDir: dir}, store: db, engines: manager, spaceProbe: func(string) (volumeSpace, error) { return volumeSpace{Available: 1 << 40, Volume: "test"}, nil }}
 	for _, id := range []string{"bad", "good"} {
 		a.tasks[id] = engine.Task{ID: id, Engine: "http", Status: engine.StatusQueued, CreatedAt: time.Now()}
 		if err := h.enqueue(ctx, a, id); err != nil {

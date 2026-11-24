@@ -46,8 +46,8 @@ const search = ref('')
 const url = ref('')
 const engineName = computed(() => ['xunlei','aria2','http'].find(name => engines.value.some(e => e.name === name && e.ready)) || '')
 const directory = ref('')
-type Preferences = { directory: string; interval: number; max_concurrent: number; auto_retry: number }
-const preferences = ref<Preferences>({directory:'',interval:2500,max_concurrent:5,auto_retry:0})
+type Preferences = { directory: string; interval: number; max_concurrent: number; auto_retry: number; disk_reserve_mb: number }
+const preferences = ref<Preferences>({directory:'',interval:2500,max_concurrent:5,auto_retry:0,disk_reserve_mb:512})
 const settingsDraft = ref<Preferences>({...preferences.value})
 const settingsError = ref('')
 const settingsPicking = ref(false)
@@ -129,7 +129,7 @@ function openCreate() {
 }
 async function loadAppSettings() {
   const result = await api('/api/settings')
-  preferences.value = {directory:result.directory,interval:result.interval,max_concurrent:result.max_concurrent,auto_retry:result.auto_retry || 0}
+  preferences.value = {directory:result.directory,interval:result.interval,max_concurrent:result.max_concurrent,auto_retry:result.auto_retry || 0,disk_reserve_mb:result.disk_reserve_mb ?? 512}
   themeMode.value = result.theme
   appSettingsLoaded.value = true
   scheduleRefresh()
@@ -154,10 +154,10 @@ async function saveSettings() {
   settingsError.value = ''
   try {
     if (sdkSettingsLoaded.value) await api('/api/xunlei/settings', {method:'PUT',body:JSON.stringify(xunleiOptions.value)})
-    const patch: {interval:number;max_concurrent:number;auto_retry:number;directory?:string} = {interval:settingsDraft.value.interval,max_concurrent:settingsDraft.value.max_concurrent,auto_retry:settingsDraft.value.auto_retry}
+    const patch: {interval:number;max_concurrent:number;auto_retry:number;disk_reserve_mb:number;directory?:string} = {interval:settingsDraft.value.interval,max_concurrent:settingsDraft.value.max_concurrent,auto_retry:settingsDraft.value.auto_retry,disk_reserve_mb:settingsDraft.value.disk_reserve_mb}
     if (settingsDraft.value.directory !== preferences.value.directory) patch.directory = settingsDraft.value.directory
     const result = await api('/api/settings',{method:'PATCH',body:JSON.stringify(patch)})
-    preferences.value = {directory:result.directory,interval:result.interval,max_concurrent:result.max_concurrent,auto_retry:result.auto_retry || 0}
+    preferences.value = {directory:result.directory,interval:result.interval,max_concurrent:result.max_concurrent,auto_retry:result.auto_retry || 0,disk_reserve_mb:result.disk_reserve_mb ?? 512}
     themeMode.value = result.theme
     scheduleRefresh()
     notify('下载器设置已保存')
@@ -451,6 +451,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
         <div class="directory-field"><span>默认保存目录</span><div class="directory-controls"><input aria-label="默认保存目录" :value="settingsDraft.directory || '应用默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory(true)" :disabled="pickingDirectory">选择目录</button><button v-if="settingsDraft.directory" type="button" class="secondary-button" @click="settingsDraft.directory=''">重置</button></div><p v-if="directoryError" class="error-banner" role="alert">{{ directoryError }}</p></div>
         <label><span>最大同时下载数（所有引擎合计）</span><input v-model.number="settingsDraft.max_concurrent" type="number" min="1" max="100" required /><small>超过上限的任务按添加顺序等待；降低上限不会中断当前下载。应用重启后未完成任务保持暂停。</small></label>
         <label><span>下载进度同步间隔</span><select v-model.number="settingsDraft.interval"><option :value="2500">2.5 秒</option><option :value="5000">5 秒</option><option :value="10000">10 秒</option></select><small>仅有下载中、等待中或等待自动重试的任务时同步，页面隐藏时暂停。</small></label>
+        <label class="disk-reserve-setting"><span>磁盘保留空间（MB）</span><input v-model.number="settingsDraft.disk_reserve_mb" type="number" min="64" max="102400" required /><small>启动前预估同卷任务所需空间，大小未知时先检查保留空间。下载中低于此值会暂停本应用任务，需释放空间后手动继续；排队任务在空间恢复后自动补位。</small></label>
         <label class="auto-retry-setting"><span>失败后自动重试</span><select v-model.number="settingsDraft.auto_retry"><option :value="0">关闭</option><option v-for="n in 5" :key="n" :value="n">最多 {{ n }} 次</option></select><small>仅对可确认的网络故障或临时服务器错误重试。间隔从 30 秒逐次加倍；授权、链接失效、磁盘和未知错误不自动重试。重启应用后需手动继续已有任务。</small></label>
         <fieldset v-if="sdkSettingsLoaded" class="sdk-settings" :disabled="savingSettings || recovering">
           <legend>迅雷引擎</legend>

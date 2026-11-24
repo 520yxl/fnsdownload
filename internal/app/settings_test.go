@@ -28,7 +28,7 @@ func TestApplicationSettingsPersistAndPatch(t *testing.T) {
 	if w := request(h, "GET", "", ""); w.Code != 401 && w.Code != 403 {
 		t.Fatal("unauthenticated settings accessible")
 	}
-	if w := request(h, "PATCH", `{"interval":5000,"max_concurrent":3,"auto_retry":2}`, "1000"); w.Code != 200 {
+	if w := request(h, "PATCH", `{"interval":5000,"max_concurrent":3,"auto_retry":2,"disk_reserve_mb":1024}`, "1000"); w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
 	if w := request(h, "PATCH", `{"theme":"dark"}`, "1000"); w.Code != 200 {
@@ -37,16 +37,16 @@ func TestApplicationSettingsPersistAndPatch(t *testing.T) {
 	reloaded := makeHandler()
 	w := request(reloaded, "GET", "", "1000")
 	var value appSettings
-	if json.Unmarshal(w.Body.Bytes(), &value) != nil || value.Theme != "dark" || value.Interval != 5000 || value.MaxConcurrent != 3 || value.AutoRetry != 2 {
+	if json.Unmarshal(w.Body.Bytes(), &value) != nil || value.Theme != "dark" || value.Interval != 5000 || value.MaxConcurrent != 3 || value.AutoRetry != 2 || value.DiskReserveMB != 1024 {
 		t.Fatal("settings lost across handler restart or partial patch")
 	}
-	for _, body := range []string{`{"auto_retry":-1}`, `{"auto_retry":6}`, `{"max_concurrent":0}`, `{"max_concurrent":101}`, `{"interval":1}`, `{"theme":"invalid"}`, `{"directory":"../outside"}`} {
+	for _, body := range []string{`{"disk_reserve_mb":0}`, `{"disk_reserve_mb":102401}`, `{"auto_retry":-1}`, `{"auto_retry":6}`, `{"max_concurrent":0}`, `{"max_concurrent":101}`, `{"interval":1}`, `{"theme":"invalid"}`, `{"directory":"../outside"}`} {
 		if w := request(reloaded, "PATCH", body, "1000"); w.Code != 400 {
 			t.Fatal("invalid setting accepted", body, w.Code)
 		}
 	}
 	w = request(reloaded, "GET", "", "1000")
-	if json.Unmarshal(w.Body.Bytes(), &value) != nil || value.Theme != "dark" || value.Interval != 5000 || value.MaxConcurrent != 3 || value.AutoRetry != 2 {
+	if json.Unmarshal(w.Body.Bytes(), &value) != nil || value.Theme != "dark" || value.Interval != 5000 || value.MaxConcurrent != 3 || value.AutoRetry != 2 || value.DiskReserveMB != 1024 {
 		t.Fatal("invalid update changed settings")
 	}
 }

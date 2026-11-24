@@ -54,6 +54,8 @@ func (h *Handler) enqueue(ctx context.Context, e engine.Engine, id string) error
 	}
 	h.queue[id] = e
 	delete(h.queueFailures, id)
+	delete(h.spaceWait, id)
+	delete(h.spacePaused, id)
 	return nil
 }
 
@@ -64,48 +66,21 @@ func (h *Handler) dispatchQueue(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	if len(h.queue) == 0 && settings.AutoRetry == 0 {
-		h.retryStates = nil
-		return
-	}
 	stored, err := h.store.List(ctx)
 	if err != nil {
 		return
 	}
-	if settings.AutoRetry > 0 {
-		for i, task := range stored {
-			if task.Status == engine.StatusCompleted || task.Status == engine.StatusRemoved || task.Status == engine.StatusPaused {
-				continue
-			}
-			if _, waiting := h.queue[task.ID]; waiting {
-				continue
-			}
-			if h.retryBlocked[task.ID] {
-				continue
-			}
-			e, ok := h.engines.Get(task.Engine)
-			if !ok {
-				continue
-			}
-			if updated, getErr := e.Get(ctx, task.ID); getErr == nil {
-				task = updated
-			}
-			if reason, failed := h.queueFailures[task.ID]; failed {
-				task.Status = engine.StatusFailed
-				task.Error = reason
-			}
-			if task.Status != stored[i].Status || task.Error != stored[i].Error {
-				_ = h.store.Upsert(ctx, task)
-			}
-			stored[i] = task
-		}
+	if h.spaceWait == nil {
+		h.spaceWait = make(map[string]string)
 	}
-	h.prepareAutoRetries(ctx, stored, settings.AutoRetry, time.Now().UTC())
+	if h.spacePaused == nil {
+		h.spacePaused = make(map[string]string)
+	}
+	reserve := int64(settings.DiskReserveMB) * 1024 * 1024
+	reserved := make(map[string]int64)
 	active := 0
-	for _, task := range stored {
-		if _, failed := h.queueFailures[task.ID]; failed {
-			continue
-		}
+	// Refresh only live tasks (or failed tasks eligible for automatic retry).
+	for i, task := range stored {
 		if _, waiting := h.queue[task.ID]; waiting {
 			continue
 		}
@@ -113,14 +88,59 @@ func (h *Handler) dispatchQueue(ctx context.Context) {
 		if !ok {
 			continue
 		}
-		updated, getErr := e.Get(ctx, task.ID)
-		if getErr == nil {
-			task = updated
+		live := task.Status == engine.StatusRunning || task.Status == engine.StatusQueued
+		if live || (settings.AutoRetry > 0 && task.Status == engine.StatusFailed && !h.retryBlocked[task.ID]) {
+			if updated, getErr := e.Get(ctx, task.ID); getErr == nil {
+				task = updated
+			}
+		}
+		if reason, failed := h.queueFailures[task.ID]; failed {
+			task.Status = engine.StatusFailed
+			task.Error = reason
 		}
 		if task.Status == engine.StatusRunning || task.Status == engine.StatusQueued {
-			active++
+			info, probeErr := h.diskSpace(task.Directory)
+			if probeErr != nil {
+				h.spacePaused[task.ID] = "无法读取保存目录的空间信息，请检查目录或存储卷；当前任务未自动暂停"
+			} else if info.Available >= reserve {
+				delete(h.spacePaused, task.ID)
+			}
+			if probeErr == nil && info.Available < reserve {
+				reason := spaceDescription(info.Available, reserve) + "；已暂停，请释放空间后手动继续"
+				if pauseErr := e.Pause(ctx, task.ID); pauseErr == nil {
+					if updated, getErr := e.Get(ctx, task.ID); getErr == nil {
+						task = updated
+					}
+					task.Status = engine.StatusPaused
+					task.SpeedBytes = 0
+					task.Error = reason
+					h.spacePaused[task.ID] = reason
+					if h.retryBlocked == nil {
+						h.retryBlocked = make(map[string]bool)
+					}
+					h.retryBlocked[task.ID] = true
+					delete(h.retryStates, task.ID)
+				} else {
+					task.Error = "保存目录空间不足，暂停失败，请手动暂停或检查应用日志"
+					h.spacePaused[task.ID] = task.Error
+				}
+			}
+			if task.Status == engine.StatusRunning || task.Status == engine.StatusQueued {
+				active++
+				if probeErr == nil {
+					reserved[info.Volume] = spaceRequired(reserved[info.Volume], remainingBytes(task))
+				}
+			}
 		}
+		if task.Status == engine.StatusCompleted || task.Status == engine.StatusRemoved {
+			delete(h.spacePaused, task.ID)
+		}
+		if task.Status != stored[i].Status || task.Error != stored[i].Error {
+			_ = h.store.Upsert(ctx, task)
+		}
+		stored[i] = task
 	}
+	h.prepareAutoRetries(ctx, stored, settings.AutoRetry, time.Now().UTC())
 	sort.Slice(stored, func(i, j int) bool {
 		if stored[i].CreatedAt.Equal(stored[j].CreatedAt) {
 			return stored[i].ID < stored[j].ID
@@ -135,6 +155,20 @@ func (h *Handler) dispatchQueue(ctx context.Context) {
 		if !waiting {
 			continue
 		}
+		if current, getErr := e.Get(ctx, task.ID); getErr == nil {
+			task = current
+		}
+		info, probeErr := h.diskSpace(task.Directory)
+		if probeErr != nil {
+			h.spaceWait[task.ID] = "无法读取保存目录的可用空间，请检查目录或存储卷是否可用"
+			continue
+		}
+		required := spaceRequired(spaceRequired(reserved[info.Volume], remainingBytes(task)), reserve)
+		if info.Available < required {
+			h.spaceWait[task.ID] = spaceDescription(info.Available, required) + "；等待释放空间"
+			continue
+		}
+		delete(h.spaceWait, task.ID)
 		if err := e.Start(ctx, task.ID); err != nil {
 			task.Status = engine.StatusFailed
 			task.Error = err.Error()
@@ -144,7 +178,8 @@ func (h *Handler) dispatchQueue(ctx context.Context) {
 			h.queueFailures[task.ID] = task.Error
 		} else {
 			active++
-			if updated, err := e.Get(ctx, task.ID); err == nil {
+			reserved[info.Volume] = spaceRequired(reserved[info.Volume], remainingBytes(task))
+			if updated, getErr := e.Get(ctx, task.ID); getErr == nil {
 				task = updated
 			}
 		}
