@@ -278,6 +278,9 @@ func TestSettingsAndMissingRecordRecoveryWithRealAria2(t *testing.T) {
 			Status string `json:"status"`
 		}
 		if err = own.call(ctx, "aria2.tellStatus", []any{gid}, &status); err != nil {
+			if missingTask(err) {
+				break
+			}
 			t.Fatal(err)
 		}
 		if status.Status == "removed" {
@@ -289,7 +292,7 @@ func TestSettingsAndMissingRecordRecoveryWithRealAria2(t *testing.T) {
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
-	if err = own.call(ctx, "aria2.removeDownloadResult", []any{gid}, nil); err != nil {
+	if err = own.call(ctx, "aria2.removeDownloadResult", []any{gid}, nil); err != nil && !missingTask(err) {
 		t.Fatal(err)
 	}
 	missing, err := own.Get(ctx, task.ID)

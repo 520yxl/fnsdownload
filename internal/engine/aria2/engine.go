@@ -345,7 +345,7 @@ func (e *Engine) Delete(ctx context.Context, id string, removeFiles bool) error 
 			if err != nil {
 				return err
 			}
-			if task.Status == engine.StatusRemoved {
+			if task.Status == engine.StatusRemoved || e.missing[id] {
 				break
 			}
 			if time.Now().After(deadline) {
