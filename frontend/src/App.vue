@@ -5,7 +5,7 @@ import { TrimApp, type AppAuthResult } from '@trimjs/web-app'
 type Engine = { name: string; ready: boolean; error?: string }
 type Task = {
   id: string; engine: string; source: string; name: string; directory: string
-  status: string; total_bytes: number; completed_bytes: number; speed_bytes: number; error?: string
+  status: string; total_bytes: number; completed_bytes: number; speed_bytes: number; error?: string; retry_count?: number; retry_at?: string; retryable?: boolean
 }
 const base = '/app/fnsdownload'
 type ThemeMode = 'light' | 'dark' | 'auto'
@@ -46,8 +46,8 @@ const search = ref('')
 const url = ref('')
 const engineName = computed(() => ['xunlei','aria2','http'].find(name => engines.value.some(e => e.name === name && e.ready)) || '')
 const directory = ref('')
-type Preferences = { directory: string; interval: number; max_concurrent: number }
-const preferences = ref<Preferences>({directory:'',interval:2500,max_concurrent:5})
+type Preferences = { directory: string; interval: number; max_concurrent: number; auto_retry: number }
+const preferences = ref<Preferences>({directory:'',interval:2500,max_concurrent:5,auto_retry:0})
 const settingsDraft = ref<Preferences>({...preferences.value})
 const settingsError = ref('')
 const settingsPicking = ref(false)
@@ -129,7 +129,7 @@ function openCreate() {
 }
 async function loadAppSettings() {
   const result = await api('/api/settings')
-  preferences.value = {directory:result.directory,interval:result.interval,max_concurrent:result.max_concurrent}
+  preferences.value = {directory:result.directory,interval:result.interval,max_concurrent:result.max_concurrent,auto_retry:result.auto_retry || 0}
   themeMode.value = result.theme
   appSettingsLoaded.value = true
   scheduleRefresh()
@@ -154,10 +154,10 @@ async function saveSettings() {
   settingsError.value = ''
   try {
     if (sdkSettingsLoaded.value) await api('/api/xunlei/settings', {method:'PUT',body:JSON.stringify(xunleiOptions.value)})
-    const patch: {interval:number;max_concurrent:number;directory?:string} = {interval:settingsDraft.value.interval,max_concurrent:settingsDraft.value.max_concurrent}
+    const patch: {interval:number;max_concurrent:number;auto_retry:number;directory?:string} = {interval:settingsDraft.value.interval,max_concurrent:settingsDraft.value.max_concurrent,auto_retry:settingsDraft.value.auto_retry}
     if (settingsDraft.value.directory !== preferences.value.directory) patch.directory = settingsDraft.value.directory
     const result = await api('/api/settings',{method:'PATCH',body:JSON.stringify(patch)})
-    preferences.value = {directory:result.directory,interval:result.interval,max_concurrent:result.max_concurrent}
+    preferences.value = {directory:result.directory,interval:result.interval,max_concurrent:result.max_concurrent,auto_retry:result.auto_retry || 0}
     themeMode.value = result.theme
     scheduleRefresh()
     notify('下载器设置已保存')
@@ -236,15 +236,18 @@ async function api(path: string, init?: RequestInit) {
   if (response.status === 204) return null
   return response.json()
 }
+function needsSync(t: Task) {
+ return t.status === 'running' || t.status === 'queued' || (!!t.retryable && t.status === 'failed' && (t.retry_count || 0) < preferences.value.auto_retry)
+}
 function scheduleRefresh() {
   window.clearTimeout(timer)
   if (disposed || document.hidden) return
-  const active = tasks.value.some(t => t.status === 'running' || t.status === 'queued')
+  const active = tasks.value.some(needsSync)
   if (active) timer = window.setTimeout(() => refresh(true), preferences.value.interval)
 }
 function visibilityChanged() {
   window.clearTimeout(timer)
-  if (!document.hidden && tasks.value.some(t => t.status === 'running' || t.status === 'queued')) void refresh(true)
+  if (!document.hidden && tasks.value.some(needsSync)) void refresh(true)
 }
 async function refresh(silent = false) {
   if (refreshing) return
@@ -372,7 +375,7 @@ async function action(task: Task, actionName: string) {
       removeDialog.value?.close()
       if (selectedTask.value?.id === task.id) detailsDialog.value?.close()
     }
-    notify(actionName.startsWith('delete') ? (actionName==='delete-files' ? '任务和下载文件已删除' : '任务已移除，下载文件已保留') : actionName === 'pause' ? '已发送暂停请求' : actionName === 'retry' ? '任务已加入重试队列' : '已发送继续请求')
+    notify(actionName.startsWith('delete') ? (actionName==='delete-files' ? '任务和下载文件已删除' : '任务已移除，下载文件已保留') : actionName === 'pause' ? '已发送暂停请求' : actionName === 'cancel-retry' ? '已取消此任务的自动重试' : actionName === 'retry' ? '任务已加入重试队列' : '已发送继续请求')
     await refresh()
   } catch (e) { operationError.value = e instanceof Error ? e.message : '操作失败' }
   finally { pendingTask.value = '' }
@@ -426,6 +429,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
             <div class="task-title"><button class="task-name" @click="openDetails(task)" :title="'查看任务详情：'+(task.name || task.source)">{{ task.name || task.source }}</button><span class="status" :class="task.status">{{ statusLabel(task.status) }}</span></div>
             <div class="task-meta"><span>{{ task.engine }}</span><span>{{ formatBytes(task.completed_bytes) }} / {{ task.total_bytes ? formatBytes(task.total_bytes) : '大小未知' }}</span><span v-if="task.status==='running'">{{ formatBytes(task.speed_bytes) }}/s</span></div>
             <div class="progress-line"><div class="progress" :class="task.status" role="progressbar" :aria-label="task.name + '下载进度'" :aria-valuenow="task.total_bytes>0 ? percent(task) : undefined" aria-valuemin="0" aria-valuemax="100"><i :style="{width: percent(task)+'%'}"></i></div><span>{{ task.total_bytes>0 ? percent(task)+'%' : '大小未知' }}</span></div>
+            <small v-if="task.retry_at" class="hint">计划于 {{ new Date(task.retry_at).toLocaleTimeString() }} 自动重试 · 已重试 {{ task.retry_count || 0 }}/{{ preferences.auto_retry }} 次 <button class="text-button" @click="action(task,'cancel-retry')" :disabled="!!pendingTask || bulkBusy">取消自动重试</button></small>
             <small v-if="task.error" class="task-error">{{ task.error }}</small>
           </div>
           <div class="task-actions">
@@ -446,7 +450,8 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
       <div class="settings-body create-form">
         <div class="directory-field"><span>默认保存目录</span><div class="directory-controls"><input aria-label="默认保存目录" :value="settingsDraft.directory || '应用默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory(true)" :disabled="pickingDirectory">选择目录</button><button v-if="settingsDraft.directory" type="button" class="secondary-button" @click="settingsDraft.directory=''">重置</button></div><p v-if="directoryError" class="error-banner" role="alert">{{ directoryError }}</p></div>
         <label><span>最大同时下载数（所有引擎合计）</span><input v-model.number="settingsDraft.max_concurrent" type="number" min="1" max="100" required /><small>超过上限的任务按添加顺序等待；降低上限不会中断当前下载。应用重启后未完成任务保持暂停。</small></label>
-        <label><span>下载进度同步间隔</span><select v-model.number="settingsDraft.interval"><option :value="2500">2.5 秒</option><option :value="5000">5 秒</option><option :value="10000">10 秒</option></select><small>仅有下载中或等待中的任务时同步，页面隐藏时暂停。</small></label>
+        <label><span>失败后自动重试</span><select v-model.number="settingsDraft.auto_retry"><option :value="0">关闭</option><option v-for="n in 5" :key="n" :value="n">最多 {{ n }} 次</option></select><small>仅对可确认的网络故障或临时服务器错误重试。间隔从 30 秒逐次加倍；授权、链接失效、磁盘和未知错误不自动重试。重启应用后需手动继续已有任务。</small></label>
+        <label><span>下载进度同步间隔</span><select v-model.number="settingsDraft.interval"><option :value="2500">2.5 秒</option><option :value="5000">5 秒</option><option :value="10000">10 秒</option></select><small>仅有下载中、等待中或等待自动重试的任务时同步，页面隐藏时暂停。</small></label>
         <fieldset v-if="sdkSettingsLoaded" class="sdk-settings" :disabled="savingSettings || recovering">
           <legend>迅雷引擎</legend>
           <label><span>最大同时下载任务数</span><input v-model.number="xunleiOptions.concurrent" type="number" min="1" max="100" required /></label>

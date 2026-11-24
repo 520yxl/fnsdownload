@@ -21,6 +21,8 @@ import (
 )
 
 type Handler struct {
+	retryStates   map[string]retryState
+	retryBlocked  map[string]bool
 	queueFailures map[string]string
 	queueMu       sync.Mutex
 	queue         map[string]engine.Engine
@@ -92,6 +94,11 @@ func (h *Handler) restoreTasks() error {
 		return err
 	}
 	for _, task := range tasks {
+		if h.retryBlocked == nil {
+			h.retryBlocked = make(map[string]bool)
+		}
+		h.retryBlocked[task.ID] = true
+		task.RetryAt = nil
 		if task.Engine == "aria2" && h.aria2Engine != nil {
 			restored := h.aria2Engine.RestoreTask(task)
 			if err := h.store.Upsert(ctx, restored); err != nil {
@@ -157,7 +164,7 @@ func (h *Handler) routes() {
 	h.settingsRoutes()
 	h.xunleiRoutes()
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.22", "runtime": "go", "database": "sqlite"})
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.23", "runtime": "go", "database": "sqlite"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"download_dir": filepath.Clean(h.cfg.DownloadDir), "data_dir": filepath.Clean(h.cfg.DataDir), "database": "sqlite"})
@@ -214,6 +221,7 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 				task.Error = reason
 				task.SpeedBytes = 0
 			}
+			task = h.retryMetadata(task)
 			out[task.ID] = task
 			_ = h.store.Upsert(r.Context(), task)
 		}
@@ -222,7 +230,7 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		for _, task := range stored {
 			if _, ok := out[task.ID]; !ok {
-				out[task.ID] = task
+				out[task.ID] = h.retryMetadata(task)
 			}
 		}
 	}
@@ -367,8 +375,18 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 	}
 	var err error
 	switch action {
+	case "cancel-retry":
+		if h.retryBlocked == nil {
+			h.retryBlocked = make(map[string]bool)
+		}
+		h.retryBlocked[id] = true
+		delete(h.retryStates, id)
 	case "pause":
-		err = selected.Pause(r.Context(), id)
+		current, getErr := selected.Get(r.Context(), id)
+		_, waiting := h.queue[id]
+		if !(waiting && getErr == nil && current.Status == engine.StatusFailed) {
+			err = selected.Pause(r.Context(), id)
+		}
 	case "retry":
 		task, getErr := selected.Get(r.Context(), id)
 		_, startFailed := h.queueFailures[id]
@@ -389,7 +407,18 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, err.Error())
 		return
 	}
-	if action != "resume" && action != "retry" {
+	if action == "resume" || action == "retry" {
+		delete(h.retryStates, id)
+		delete(h.retryBlocked, id)
+	}
+	if action == "pause" || action == "delete" || action == "delete-files" {
+		if h.retryBlocked == nil {
+			h.retryBlocked = make(map[string]bool)
+		}
+		h.retryBlocked[id] = true
+		delete(h.retryStates, id)
+	}
+	if action != "resume" && action != "retry" && action != "cancel-retry" {
 		delete(h.queue, id)
 		delete(h.queueFailures, id)
 	}
@@ -403,6 +432,7 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 			task.Status = engine.StatusQueued
 			task.Error = ""
 		}
+		task = h.retryMetadata(task)
 		_ = h.store.Upsert(r.Context(), task)
 	}
 	w.WriteHeader(http.StatusNoContent)

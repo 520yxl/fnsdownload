@@ -58,19 +58,49 @@ func (h *Handler) enqueue(ctx context.Context, e engine.Engine, id string) error
 }
 
 func (h *Handler) dispatchQueue(ctx context.Context) {
-	if len(h.queue) == 0 {
-		return
-	}
 	h.settingsMu.Lock()
 	settings, err := h.readSettings()
 	h.settingsMu.Unlock()
 	if err != nil {
 		return
 	}
+	if len(h.queue) == 0 && settings.AutoRetry == 0 {
+		h.retryStates = nil
+		return
+	}
 	stored, err := h.store.List(ctx)
 	if err != nil {
 		return
 	}
+	if settings.AutoRetry > 0 {
+		for i, task := range stored {
+			if task.Status == engine.StatusCompleted || task.Status == engine.StatusRemoved || task.Status == engine.StatusPaused {
+				continue
+			}
+			if _, waiting := h.queue[task.ID]; waiting {
+				continue
+			}
+			if h.retryBlocked[task.ID] {
+				continue
+			}
+			e, ok := h.engines.Get(task.Engine)
+			if !ok {
+				continue
+			}
+			if updated, getErr := e.Get(ctx, task.ID); getErr == nil {
+				task = updated
+			}
+			if reason, failed := h.queueFailures[task.ID]; failed {
+				task.Status = engine.StatusFailed
+				task.Error = reason
+			}
+			if task.Status != stored[i].Status || task.Error != stored[i].Error {
+				_ = h.store.Upsert(ctx, task)
+			}
+			stored[i] = task
+		}
+	}
+	h.prepareAutoRetries(ctx, stored, settings.AutoRetry, time.Now().UTC())
 	active := 0
 	for _, task := range stored {
 		if _, failed := h.queueFailures[task.ID]; failed {

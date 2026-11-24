@@ -9,6 +9,7 @@ import (
 )
 
 type appSettings struct {
+	AutoRetry     int    `json:"auto_retry"`
 	MaxConcurrent int    `json:"max_concurrent"`
 	Directory     string `json:"directory"`
 	Interval      int    `json:"interval"`
@@ -30,6 +31,9 @@ func (h *Handler) readSettings() (appSettings, error) {
 	return value, validateAppSettings(value)
 }
 func validateAppSettings(v appSettings) error {
+	if v.AutoRetry < 0 || v.AutoRetry > 5 {
+		return errors.New("自动重试次数必须为 0 到 5")
+	}
 	if v.MaxConcurrent < 1 || v.MaxConcurrent > 100 {
 		return errors.New("同时下载数必须为 1 到 100")
 	}
@@ -63,6 +67,7 @@ func (h *Handler) settingsRoutes() {
 			return
 		}
 		var patch struct {
+			AutoRetry     *int    `json:"auto_retry"`
 			MaxConcurrent *int    `json:"max_concurrent"`
 			Directory     *string `json:"directory"`
 			Interval      *int    `json:"interval"`
@@ -96,6 +101,9 @@ func (h *Handler) settingsRoutes() {
 			} else {
 				value.Directory = ""
 			}
+		}
+		if patch.AutoRetry != nil {
+			value.AutoRetry = *patch.AutoRetry
 		}
 		if patch.MaxConcurrent != nil {
 			value.MaxConcurrent = *patch.MaxConcurrent
