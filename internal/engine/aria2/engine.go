@@ -32,13 +32,13 @@ type Engine struct {
 }
 
 func NewManaged(cfg Config) *Engine {
-	return &Engine{cfg: cfg, client: &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("aria2 RPC �������ض���") }}, tasks: map[string]engine.Task{}}
+	return &Engine{cfg: cfg, client: &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("aria2 RPC 不允许重定向") }}, tasks: map[string]engine.Task{}}
 }
 func (e *Engine) Name() string                         { return "aria2" }
 func (e *Engine) Initialize(ctx context.Context) error { return e.Health(ctx) }
 func (e *Engine) call(ctx context.Context, method string, params []any, out any) error {
 	if e.endpoint == "" || e.secret == "" {
-		return errors.New("aria2 ����ʵ����δ����")
+		return errors.New("aria2 独立实例尚未启动")
 	}
 	params = append([]any{"token:" + e.secret}, params...)
 	id := fmt.Sprintf("moxyi-%d", e.next.Add(1))
@@ -50,7 +50,7 @@ func (e *Engine) call(ctx context.Context, method string, params []any, out any)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return errors.New("�޷����� aria2 ����ʵ��")
+		return errors.New("无法连接 aria2 独立实例")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
@@ -63,10 +63,10 @@ func (e *Engine) call(ctx context.Context, method string, params []any, out any)
 		} `json:"error"`
 	}
 	if err = json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&envelope); err != nil {
-		return errors.New("aria2 RPC ��Ӧ��Ч")
+		return errors.New("aria2 RPC 响应无效")
 	}
 	if envelope.Error != nil {
-		return fmt.Errorf("aria2 RPC ���� %d", envelope.Error.Code)
+		return fmt.Errorf("aria2 RPC 错误 %d", envelope.Error.Code)
 	}
 	if out != nil {
 		return json.Unmarshal(envelope.Result, out)
@@ -75,7 +75,7 @@ func (e *Engine) call(ctx context.Context, method string, params []any, out any)
 }
 func (e *Engine) ready(ctx context.Context) error {
 	if e.closed {
-		return errors.New("aria2 �����ѹر�")
+		return errors.New("aria2 引擎已关闭")
 	}
 	if e.process == nil {
 		p, err := e.startProcess(ctx)
@@ -86,7 +86,7 @@ func (e *Engine) ready(ctx context.Context) error {
 	}
 	select {
 	case <-e.process.done:
-		return errors.New("aria2 �����������˳���������Ӧ��")
+		return errors.New("aria2 独立进程已退出，请重启应用")
 	default:
 	}
 	var result any
@@ -113,13 +113,13 @@ func (e *Engine) RestoreTask(t engine.Task) engine.Task {
 func (e *Engine) Create(ctx context.Context, req engine.CreateRequest) (engine.Task, error) {
 	u, err := url.ParseRequestURI(req.URL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || strings.ContainsRune(req.URL, 0) {
-		return engine.Task{}, errors.New("aria2 Ŀǰ��֧�� HTTP / HTTPS")
+		return engine.Task{}, errors.New("aria2 目前仅支持 HTTP / HTTPS")
 	}
 	if !filepath.IsAbs(req.Directory) {
-		return engine.Task{}, errors.New("��Ч�� aria2 ����Ŀ¼")
+		return engine.Task{}, errors.New("无效的 aria2 保存目录")
 	}
 	if req.Name != "" && (filepath.Base(req.Name) != req.Name || strings.ContainsAny(req.Name, "/\\\x00") || req.Name == ".." || req.Name == ".") {
-		return engine.Task{}, errors.New("��Ч�������ļ���")
+		return engine.Task{}, errors.New("无效的下载文件名")
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -129,7 +129,7 @@ func (e *Engine) Create(ctx context.Context, req engine.CreateRequest) (engine.T
 	// Keep .aria2 control files away from other applications, including identical URLs.
 	dir, err := os.MkdirTemp(req.Directory, "MoxYi-aria2-")
 	if err != nil {
-		return engine.Task{}, errors.New("�޷�������������Ŀ¼")
+		return engine.Task{}, errors.New("无法创建独立下载目录")
 	}
 	options := map[string]string{"dir": dir, "pause": "true", "auto-file-renaming": "true", "allow-overwrite": "false"}
 	if req.Name != "" {
@@ -157,6 +157,29 @@ func (e *Engine) control(ctx context.Context, id, method string) error {
 	}
 	if err := e.ready(ctx); err != nil {
 		return err
+	}
+	if method == "aria2.unpause" {
+		task, err := e.get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if task.Status == engine.StatusFailed {
+			if !filepath.IsAbs(task.Directory) || !strings.HasPrefix(filepath.Base(task.Directory), "MoxYi-aria2-") || task.Name == "" || filepath.Base(task.Name) != task.Name || strings.ContainsAny(task.Name, "/\\\x00") {
+				return errors.New("无法安全恢复下载路径")
+			}
+			gid := strings.TrimPrefix(id, "aria2-")
+			// Completed error results cannot be unpaused. Re-add this owned GID and
+			// directory, retaining its control file and partial download for continuation.
+			_ = e.call(ctx, "aria2.removeDownloadResult", []any{gid}, nil)
+			var restored string
+			options := map[string]string{"gid": gid, "dir": task.Directory, "out": task.Name, "pause": "true", "continue": "true", "allow-overwrite": "false", "auto-file-renaming": "false"}
+			if err := e.call(ctx, "aria2.addUri", []any{[]string{task.Source}, options}, &restored); err != nil {
+				return err
+			}
+			if restored != gid {
+				return errors.New("aria2 返回了不同的任务标识")
+			}
+		}
 	}
 	if err := e.call(ctx, method, []any{strings.TrimPrefix(id, "aria2-")}, nil); err != nil {
 		return err
@@ -212,7 +235,7 @@ func (e *Engine) get(ctx context.Context, id string) (engine.Task, error) {
 		task.Status = engine.StatusCompleted
 	case "error":
 		task.Status = engine.StatusFailed
-		task.Error = "aria2 ������� " + r.Code
+		task.Error = "aria2 任务错误 " + r.Code
 	case "removed":
 		task.Status = engine.StatusRemoved
 	default:
@@ -284,7 +307,7 @@ func (e *Engine) Delete(ctx context.Context, id string, removeFiles bool) error 
 				break
 			}
 			if time.Now().After(deadline) {
-				return errors.New("aria2 ��δֹͣ�������Ժ�����")
+				return errors.New("aria2 尚未停止任务，请稍后重试")
 			}
 			select {
 			case <-ctx.Done():
@@ -301,7 +324,7 @@ func (e *Engine) Delete(ctx context.Context, id string, removeFiles bool) error 
 	}
 	if removeFiles {
 		if !strings.HasPrefix(filepath.Base(task.Directory), "MoxYi-aria2-") || filepath.Base(task.Name) != task.Name {
-			return errors.New("�ܾ�ɾ���Ƕ�������Ŀ¼�е��ļ�")
+			return errors.New("拒绝删除非独立下载目录中的文件")
 		}
 		for _, path := range []string{filepath.Join(task.Directory, task.Name), filepath.Join(task.Directory, task.Name+".aria2")} {
 			if err = os.Remove(path); err != nil && !os.IsNotExist(err) {

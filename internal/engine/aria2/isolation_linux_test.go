@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -149,5 +150,62 @@ func TestIndependentInstances(t *testing.T) {
 	}
 	if mode, err := os.Stat(filepath.Join(cfg.StateDir, "runtime.conf")); err != nil || mode.Mode().Perm()&0077 != 0 {
 		t.Fatal("RPC configuration not private")
+	}
+}
+
+func TestRetryFailedDownloadKeepsIdentity(t *testing.T) {
+	binary := os.Getenv("ARIA2_TEST_BINARY")
+	if binary == "" {
+		var err error
+		binary, err = exec.LookPath("aria2c")
+		if err != nil {
+			t.Skip("aria2 runtime not installed")
+		}
+	}
+	binary, _ = filepath.Abs(binary)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var available atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !available.Load() {
+			w.WriteHeader(403)
+			return
+		}
+		fmt.Fprint(w, "retry succeeded")
+	}))
+	defer server.Close()
+	e := NewManaged(Config{Binary: binary, StateDir: filepath.Join(t.TempDir(), "state")})
+	defer e.Close()
+	task, err := e.Create(ctx, engine.CreateRequest{URL: server.URL + "/retry.bin", Directory: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.Start(ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	wait := func(status engine.TaskStatus) engine.Task {
+		t.Helper()
+		for ctx.Err() == nil {
+			got, err := e.Get(ctx, task.ID)
+			if err == nil && got.Status == status {
+				return got
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatal("task did not reach", status)
+		return engine.Task{}
+	}
+	wait(engine.StatusFailed)
+	available.Store(true)
+	if err = e.Start(ctx, task.ID); err != nil {
+		t.Fatal("retry", err)
+	}
+	done := wait(engine.StatusCompleted)
+	if done.ID != task.ID || done.Directory != task.Directory {
+		t.Fatal("retry changed task identity or directory")
+	}
+	data, err := os.ReadFile(filepath.Join(done.Directory, done.Name))
+	if err != nil || string(data) != "retry succeeded" {
+		t.Fatal("retry file incorrect", err)
 	}
 }

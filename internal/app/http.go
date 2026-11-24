@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -205,6 +206,7 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 		for _, task := range items {
 			if _, waiting := h.queue[task.ID]; waiting {
 				task.Status = engine.StatusQueued
+				task.Error = ""
 				task.SpeedBytes = 0
 			}
 			if reason, failed := h.queueFailures[task.ID]; failed {
@@ -245,15 +247,29 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 	defer h.queueMu.Unlock()
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var input struct {
-		Engine    string            `json:"engine"`
-		URL       string            `json:"url"`
-		Directory string            `json:"directory"`
-		Name      string            `json:"name"`
-		Headers   map[string]string `json:"headers"`
+		AllowDuplicate bool              `json:"allow_duplicate"`
+		Engine         string            `json:"engine"`
+		URL            string            `json:"url"`
+		Directory      string            `json:"directory"`
+		Name           string            `json:"name"`
+		Headers        map[string]string `json:"headers"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, 400, "invalid JSON body")
 		return
+	}
+	if !input.AllowDuplicate {
+		existing, err := h.store.List(r.Context())
+		if err != nil {
+			writeError(w, 500, "无法检查重复任务")
+			return
+		}
+		for _, task := range existing {
+			if canonicalDownloadURL(task.Source) == canonicalDownloadURL(input.URL) {
+				writeJSON(w, 409, map[string]any{"error": "此链接已有下载任务，请选择跳过或再次下载", "duplicate": true})
+				return
+			}
+		}
 	}
 	if err := xunleiengine.ValidateHeaders(input.Headers); err != nil {
 		writeError(w, 400, err.Error())
@@ -313,6 +329,7 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, waiting := h.queue[task.ID]; waiting {
 		task.Status = engine.StatusQueued
+		task.Error = ""
 	}
 	_ = h.store.Upsert(r.Context(), task)
 	writeJSON(w, 202, task)
@@ -341,6 +358,14 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 	switch action {
 	case "pause":
 		err = selected.Pause(r.Context(), id)
+	case "retry":
+		task, getErr := selected.Get(r.Context(), id)
+		_, startFailed := h.queueFailures[id]
+		if getErr != nil || (task.Status != engine.StatusFailed && !startFailed) {
+			writeError(w, 409, "仅失败任务可以重试")
+			return
+		}
+		err = h.enqueue(r.Context(), selected, id)
 	case "resume":
 		err = h.enqueue(r.Context(), selected, id)
 	case "delete", "delete-files":
@@ -353,7 +378,7 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, err.Error())
 		return
 	}
-	if action != "resume" {
+	if action != "resume" && action != "retry" {
 		delete(h.queue, id)
 		delete(h.queueFailures, id)
 	}
@@ -365,6 +390,7 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 	} else if task, getErr := selected.Get(r.Context(), id); getErr == nil {
 		if _, waiting := h.queue[id]; waiting {
 			task.Status = engine.StatusQueued
+			task.Error = ""
 		}
 		_ = h.store.Upsert(r.Context(), task)
 	}
@@ -419,4 +445,25 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+// Preserve query parameters and path case: signed URLs can depend on both.
+func canonicalDownloadURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return strings.TrimSpace(raw)
+	}
+	u.Fragment = ""
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	if (u.Scheme == "http" && u.Port() == "80") || (u.Scheme == "https" && u.Port() == "443") {
+		u.Host = u.Hostname()
+		if strings.Contains(u.Host, ":") {
+			u.Host = "[" + u.Host + "]"
+		}
+	}
+	if u.Path == "" {
+		u.Path = "/"
+	}
+	return u.String()
 }

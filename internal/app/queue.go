@@ -48,6 +48,7 @@ func (h *Handler) enqueue(ctx context.Context, e engine.Engine, id string) error
 		h.queue = make(map[string]engine.Engine)
 	}
 	task.Status = engine.StatusQueued
+	task.Error = ""
 	if err := h.store.Upsert(ctx, task); err != nil {
 		return err
 	}

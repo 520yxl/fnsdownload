@@ -61,7 +61,7 @@ func (e *Engine) RestoreTask(task engine.Task) engine.Task {
 func (e *Engine) Start(_ context.Context,id string)error{
 	e.mu.Lock();rt,ok:=e.tasks[id];if !ok{e.mu.Unlock();return engine.ErrNotFound}
 	if rt.task.Status==engine.StatusRunning{e.mu.Unlock();return nil}
-	ctx,cancel:=context.WithCancel(context.Background());rt.cancel=cancel;rt.task.Status=engine.StatusRunning;rt.task.UpdatedAt=time.Now().UTC();task:=rt.task;e.mu.Unlock()
+	ctx,cancel:=context.WithCancel(context.Background());rt.cancel=cancel;rt.task.Status=engine.StatusRunning;rt.task.Error="";rt.task.UpdatedAt=time.Now().UTC();task:=rt.task;e.mu.Unlock()
 	go e.download(ctx,task);return nil
 }
 

@@ -229,8 +229,9 @@ async function api(path: string, init?: RequestInit) {
   if (!response.ok) {
     let message = `请求失败（${response.status}）`
     let taskCreated = false
-    try { const result = await response.json(); message = result.error || message; taskCreated = !!result.task_id } catch {}
-    throw Object.assign(new Error(message), { taskCreated })
+    let duplicate = false
+    try { const result = await response.json(); message = result.error || message; taskCreated = !!result.task_id; duplicate = !!result.duplicate } catch {}
+    throw Object.assign(new Error(message), { taskCreated, duplicate })
   }
   if (response.status === 204) return null
   return response.json()
@@ -258,9 +259,14 @@ async function refresh(silent = false) {
   } catch (e) { connected.value = false; error.value = e instanceof Error ? e.message : '无法连接下载服务' }
   finally { loading.value = false; refreshing = false; scheduleRefresh() }
 }
-async function addTask() {
+const duplicateDialog = ref<HTMLDialogElement | null>(null)
+const duplicateCount = ref(0)
+function canonicalURL(value: string) {
+ try { const parsed = new URL(value); parsed.hash=''; return parsed.href } catch { return value.trim() }
+}
+async function addTask(duplicates: 'ask' | 'skip' | 'allow' = 'ask') {
   if (submitting.value || !url.value.trim()) return
-  const links = url.value.split(/\r?\n/).map(v => v.trim()).filter(Boolean)
+  let links = url.value.split(/\r?\n/).map(v => v.trim()).filter(Boolean)
   let headers: Record<string,string> = {}
   try {
     for (const link of links) { const parsed = new URL(link); if (!['http:','https:'].includes(parsed.protocol)) throw new Error('请输入有效的 HTTP 或 HTTPS 下载链接。') }
@@ -273,6 +279,31 @@ async function addTask() {
   } catch (e) { createError.value = e instanceof Error ? e.message : '链接格式无效'; return }
   submitting.value = true
   createError.value = ''
+  try {
+    // Refresh once at submission; the server repeats this check under its queue lock.
+    const existing: Task[] = await api('/api/tasks')
+    const seen = new Set(existing.map(t => canonicalURL(t.source)))
+    const unique: string[] = []
+    let count = 0
+    for (const link of links) {
+      const key = canonicalURL(link)
+      if (seen.has(key)) count++
+      else unique.push(link)
+      seen.add(key)
+    }
+    if (count && duplicates === 'ask') {
+      duplicateCount.value = count
+      duplicateDialog.value?.showModal()
+      submitting.value = false
+      return
+    }
+    if (duplicates === 'skip') links = unique
+    duplicateDialog.value?.close()
+  } catch (e) {
+    createError.value = e instanceof Error ? e.message : '无法检查重复任务'
+    submitting.value = false
+    return
+  }
   const failed: string[] = []
   let created = 0
   let startFailed = 0
@@ -282,7 +313,7 @@ async function addTask() {
     // Submit in input order so creation timestamps also preserve batch ordering.
     for (const link of links) {
       try {
-        await api('/api/tasks', { method: 'POST', body: JSON.stringify({ engine: 'auto', url: link, directory: directory.value.trim(), headers }) })
+        await api('/api/tasks', { method: 'POST', body: JSON.stringify({ engine: 'auto', url: link, directory: directory.value.trim(), headers, allow_duplicate: duplicates === 'allow' }) })
         created++
       } catch (e) {
         if (e instanceof Error && 'taskCreated' in e && e.taskCreated) { created++; startFailed++ }
@@ -294,6 +325,7 @@ async function addTask() {
     filter.value = 'all'
     search.value = ''
     if (created) notify(`已创建 ${created} 个独立下载任务`)
+    else if (!failed.length) notify('重复链接已跳过，没有新增任务')
     if (failed.length) createError.value = `${failed.length} 个链接创建失败，已保留在输入框，可重新提交。${firstError}`
     else createDialog.value?.close()
     if (startFailed) notify(`已创建 ${created} 个任务，其中 ${startFailed} 个启动失败，请在任务列表查看。`)
@@ -308,9 +340,9 @@ function selectVisible(event: Event) {
  const checked = (event.target as HTMLInputElement).checked
  selectedIDs.value = checked ? [...new Set([...selectedIDs.value, ...filteredTasks.value.map(t => t.id)])] : selectedIDs.value.filter(id => !filteredTasks.value.some(t => t.id === id))
 }
-async function bulkAction(name: 'pause' | 'resume' | 'delete') {
+async function bulkAction(name: 'pause' | 'resume' | 'retry' | 'delete') {
  if (bulkBusy.value || pendingTask.value) return
- const chosen = selectedVisible.value.filter(t => name === 'pause' ? ['running','queued'].includes(t.status) : name === 'resume' ? t.status === 'paused' : true)
+ const chosen = selectedVisible.value.filter(t => name === 'pause' ? ['running','queued'].includes(t.status) : name === 'resume' ? t.status === 'paused' : name === 'retry' ? t.status === 'failed' : true)
  if (!chosen.length) { notify('没有可执行此操作的任务'); return }
  bulkBusy.value = true
  operationError.value = ''
@@ -340,7 +372,7 @@ async function action(task: Task, actionName: string) {
       removeDialog.value?.close()
       if (selectedTask.value?.id === task.id) detailsDialog.value?.close()
     }
-    notify(actionName.startsWith('delete') ? (actionName==='delete-files' ? '任务和下载文件已删除' : '任务已移除，下载文件已保留') : actionName === 'pause' ? '已发送暂停请求' : '已发送继续请求')
+    notify(actionName.startsWith('delete') ? (actionName==='delete-files' ? '任务和下载文件已删除' : '任务已移除，下载文件已保留') : actionName === 'pause' ? '已发送暂停请求' : actionName === 'retry' ? '任务已加入重试队列' : '已发送继续请求')
     await refresh()
   } catch (e) { operationError.value = e instanceof Error ? e.message : '操作失败' }
   finally { pendingTask.value = '' }
@@ -385,7 +417,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
     <section class="panel tasks-panel">
       <div class="panel-heading task-heading"><div><h2>任务列表 <span class="task-count">{{ filteredTasks.length }}</span></h2><p>下载进度自动同步</p></div><label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input v-model="search" type="search" placeholder="搜索文件或链接" aria-label="搜索文件或链接" /></label></div>
       <div v-if="error || operationError" class="error-box" role="alert">{{ error || operationError }}</div>
-      <div v-if="filteredTasks.length" class="bulk-toolbar"><label><input type="checkbox" :checked="selectedVisible.length===filteredTasks.length" :indeterminate="selectedVisible.length>0 && selectedVisible.length<filteredTasks.length" @change="selectVisible" :disabled="bulkBusy" /> 全选当前列表</label><span>已选 {{ selectedVisible.length }} 项</span><button class="secondary-button" @click="bulkAction('pause')" :disabled="!selectedVisible.length || bulkBusy || !!pendingTask">暂停</button><button class="secondary-button" @click="bulkAction('resume')" :disabled="!selectedVisible.length || bulkBusy || !!pendingTask">继续</button><button class="secondary-button" @click="bulkRemoveDialog?.showModal()" :disabled="!selectedVisible.length || bulkBusy || !!pendingTask">移除</button><button class="secondary-button" @click="selectedIDs=filteredTasks.filter(t => t.status==='completed').map(t=>t.id); bulkRemoveDialog?.showModal()" :disabled="!filteredTasks.some(t=>t.status==='completed') || bulkBusy || !!pendingTask">清理已完成</button></div>
+      <div v-if="filteredTasks.length" class="bulk-toolbar"><label><input type="checkbox" :checked="selectedVisible.length===filteredTasks.length" :indeterminate="selectedVisible.length>0 && selectedVisible.length<filteredTasks.length" @change="selectVisible" :disabled="bulkBusy" /> 全选当前列表</label><span>已选 {{ selectedVisible.length }} 项</span><button class="secondary-button" @click="bulkAction('pause')" :disabled="!selectedVisible.length || bulkBusy || !!pendingTask">暂停</button><button class="secondary-button" @click="bulkAction('resume')" :disabled="!selectedVisible.length || bulkBusy || !!pendingTask">继续</button><button class="secondary-button" @click="bulkAction('retry')" :disabled="!selectedVisible.some(t=>t.status==='failed') || bulkBusy || !!pendingTask">重试失败</button><button class="secondary-button" @click="bulkRemoveDialog?.showModal()" :disabled="!selectedVisible.length || bulkBusy || !!pendingTask">移除</button><button class="secondary-button" @click="selectedIDs=filteredTasks.filter(t => t.status==='completed').map(t=>t.id); bulkRemoveDialog?.showModal()" :disabled="!filteredTasks.some(t=>t.status==='completed') || bulkBusy || !!pendingTask">清理已完成</button></div>
       <div v-if="filteredTasks.length" class="list-columns" aria-hidden="true"><span>文件名称 / 下载进度</span><span>操作</span></div>
       <div v-if="filteredTasks.length" class="task-list">
         <article v-for="task in filteredTasks" :key="task.id" class="task-row">
@@ -397,7 +429,8 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
             <small v-if="task.error" class="task-error">{{ task.error }}</small>
           </div>
           <div class="task-actions">
-            <button v-if="task.status==='running'" @click="action(task,'pause')" :disabled="!!pendingTask || bulkBusy" title="暂停" :aria-label="'暂停 '+task.name">Ⅱ</button>
+            <button v-if="task.status==='failed'" @click="action(task,'retry')" :disabled="!!pendingTask || bulkBusy" title="重试" :aria-label="'重试 '+task.name">↻</button>
+            <button v-else-if="task.status==='running'" @click="action(task,'pause')" :disabled="!!pendingTask || bulkBusy" title="暂停" :aria-label="'暂停 '+task.name">Ⅱ</button>
             <button v-else-if="task.status==='paused' || task.status==='queued'" @click="action(task,'resume')" :disabled="!!pendingTask || bulkBusy" title="继续" :aria-label="'继续 '+task.name">▶</button>
             <button @click="confirmRemove(task)" :disabled="!!pendingTask || bulkBusy" title="移除任务" :aria-label="'移除任务 '+task.name">×</button>
           </div>
@@ -436,7 +469,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
   </main>
   <dialog ref="createDialog" class="modal create-modal" aria-labelledby="create-title" @cancel="cancelWhileBusy($event, submitting)">
     <div class="modal-header"><div><span class="modal-eyebrow">NEW DOWNLOAD</span><h2 id="create-title">新建下载</h2><p>添加链接，其余交给下载器。</p></div><button class="close-button" @click="createDialog?.close()" :disabled="submitting" aria-label="关闭新建下载">×</button></div>
-    <form @submit.prevent="addTask" :aria-busy="submitting">
+    <form @submit.prevent="addTask()" :aria-busy="submitting">
       <div class="modal-body create-form">
         <label class="url-field"><span>下载链接</span><textarea id="download-url" v-model="url" placeholder="粘贴 HTTP / HTTPS 下载地址" required autofocus :disabled="submitting" rows="3"></textarea><small>每行一个 HTTP / HTTPS 链接，每个链接创建一条独立任务。</small></label>
         <p class="hint form-message">自动选择可用引擎，优先使用迅雷。</p>
@@ -450,6 +483,11 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
       <div class="modal-footer"><span>文件保存在你的 NAS</span><button class="secondary-button" type="button" @click="createDialog?.close()" :disabled="submitting">取消</button><button class="primary-button" type="submit" :disabled="submitting || !url.trim() || !engines.some(e => e.name === engineName && e.ready)">{{ submitting ? '正在创建…' : '开始下载' }}</button></div>
     </form>
   </dialog>
+  <dialog ref="duplicateDialog" class="modal remove-modal" aria-labelledby="duplicate-title" @cancel="cancelWhileBusy($event, submitting)">
+    <div class="modal-header"><h2 id="duplicate-title">发现 {{ duplicateCount }} 个重复链接</h2></div>
+    <div class="modal-body"><p>这些链接已在任务列表中，或在本次输入中重复出现。是否跳过？</p><p class="hint">再次下载会创建独立任务。</p></div>
+    <div class="modal-footer"><button class="secondary-button" @click="duplicateDialog?.close()" :disabled="submitting">返回编辑</button><button class="secondary-button" @click="addTask('allow')" :disabled="submitting">仍然下载全部</button><button class="primary-button" @click="addTask('skip')" :disabled="submitting">跳过重复链接</button></div>
+  </dialog>
   <dialog ref="detailsDialog" class="modal detail-modal" aria-labelledby="details-title" @cancel="cancelWhileBusy($event, !!pendingTask)">
     <template v-if="detailTask">
       <div class="modal-header"><div><span class="modal-eyebrow">TASK DETAILS</span><h2 id="details-title">任务详情</h2></div><button class="close-button" @click="detailsDialog?.close()" :disabled="!!pendingTask || bulkBusy" aria-label="关闭任务详情">×</button></div>
@@ -460,7 +498,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
         <p v-if="detailsError" class="error-box" role="alert">{{ detailsError }}</p>
         <div v-if="detailTask.error || operationError" class="error-box" role="alert">{{ operationError || detailTask.error }}</div>
       </div>
-      <div class="modal-footer"><button class="danger-text" @click="confirmRemove(detailTask)" :disabled="!!pendingTask || bulkBusy">移除任务</button><button class="secondary-button" @click="detailsDialog?.close()" :disabled="!!pendingTask || bulkBusy">关闭</button><button v-if="detailTask.status==='running'" class="primary-button" @click="action(detailTask,'pause')" :disabled="!!pendingTask || bulkBusy">{{ pendingTask ? '处理中…' : '暂停下载' }}</button><button v-else-if="detailTask.status==='paused' || detailTask.status==='queued'" class="primary-button" @click="action(detailTask,'resume')" :disabled="!!pendingTask || bulkBusy">{{ pendingTask ? '处理中…' : '继续下载' }}</button></div>
+      <div class="modal-footer"><button class="danger-text" @click="confirmRemove(detailTask)" :disabled="!!pendingTask || bulkBusy">移除任务</button><button class="secondary-button" @click="detailsDialog?.close()" :disabled="!!pendingTask || bulkBusy">关闭</button><button v-if="detailTask.status==='failed'" class="primary-button" @click="action(detailTask,'retry')" :disabled="!!pendingTask || bulkBusy">重试下载</button><button v-else-if="detailTask.status==='running'" class="primary-button" @click="action(detailTask,'pause')" :disabled="!!pendingTask || bulkBusy">{{ pendingTask ? '处理中…' : '暂停下载' }}</button><button v-else-if="detailTask.status==='paused' || detailTask.status==='queued'" class="primary-button" @click="action(detailTask,'resume')" :disabled="!!pendingTask || bulkBusy">{{ pendingTask ? '处理中…' : '继续下载' }}</button></div>
     </template>
   </dialog>
   <dialog ref="bulkRemoveDialog" class="modal remove-modal" @cancel="cancelWhileBusy($event, bulkBusy)">
