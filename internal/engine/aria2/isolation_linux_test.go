@@ -215,3 +215,113 @@ func TestRetryFailedDownloadKeepsIdentity(t *testing.T) {
 		t.Fatal("retry file incorrect", err)
 	}
 }
+
+func TestSettingsAndMissingRecordRecoveryWithRealAria2(t *testing.T) {
+	binary, err := exec.LookPath("aria2c")
+	if configured := os.Getenv("ARIA2_TEST_BINARY"); configured != "" {
+		binary = configured
+		err = nil
+	}
+	if err != nil {
+		t.Skip("aria2 runtime not installed")
+	}
+	binary, _ = filepath.Abs(binary)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	own := NewManaged(Config{Binary: binary, StateDir: filepath.Join(t.TempDir(), "own")})
+	defer own.Close()
+	other := NewManaged(Config{Binary: binary, StateDir: filepath.Join(t.TempDir(), "other")})
+	defer other.Close()
+	if err = own.Health(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = other.Health(ctx); err != nil {
+		t.Fatal(err)
+	}
+	options := DefaultOptions()
+	options.Split = 2
+	options.Connections = 2
+	options.DownloadKB = 4096
+	if err = own.Configure(ctx, options); err != nil {
+		t.Fatal(err)
+	}
+	var global map[string]string
+	if err = other.call(ctx, "aria2.getGlobalOption", nil, &global); err != nil {
+		t.Fatal(err)
+	}
+	if global["max-connection-per-server"] != "8" || global["max-overall-download-limit"] != "0" {
+		t.Fatal("settings affected other application", global["max-connection-per-server"], global["max-overall-download-limit"])
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, strings.Repeat("verified", 8192)) }))
+	defer server.Close()
+	task, err := own.Create(ctx, engine.CreateRequest{URL: server.URL + "/test.bin", Directory: t.TempDir(), Name: "test.bin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gid := strings.TrimPrefix(task.ID, "aria2-")
+	var actual map[string]string
+	if err = own.call(ctx, "aria2.getOption", []any{gid}, &actual); err != nil {
+		t.Fatal(err)
+	}
+	if actual["split"] != "2" || actual["max-connection-per-server"] != "2" {
+		t.Fatal("task did not inherit configured connections", actual["split"], actual["max-connection-per-server"])
+	}
+	if err = own.Pause(ctx, task.ID); err != nil {
+		t.Fatal("idempotent pause failed", err)
+	}
+	// Simulate a session/database mismatch for this owned, paused task only.
+	if err = own.call(ctx, "aria2.forceRemove", []any{gid}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		var status struct {
+			Status string `json:"status"`
+		}
+		if err = own.call(ctx, "aria2.tellStatus", []any{gid}, &status); err != nil {
+			t.Fatal(err)
+		}
+		if status.Status == "removed" {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if err = own.call(ctx, "aria2.removeDownloadResult", []any{gid}, nil); err != nil {
+		t.Fatal(err)
+	}
+	missing, err := own.Get(ctx, task.ID)
+	if err != nil || missing.Status != engine.StatusPaused || !strings.Contains(missing.Error, "任务记录未加载") {
+		t.Fatal("real RPC 400 not recovered as actionable paused task", missing, err)
+	}
+	if err = own.Start(ctx, task.ID); err != nil {
+		t.Fatal("missing task resume failed", err)
+	}
+	for {
+		task, err = own.Get(ctx, task.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if task.Status == engine.StatusCompleted {
+			break
+		}
+		if task.Status == engine.StatusFailed {
+			t.Fatal(task.Error)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("recovered transfer did not finish", ctx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(task.Directory, task.Name))
+	if err != nil || string(data) != strings.Repeat("verified", 8192) {
+		t.Fatal("recovered download data mismatch", err)
+	}
+	reloaded := NewManaged(own.cfg)
+	if reloaded.Options() != options {
+		t.Fatal("settings not persisted")
+	}
+}

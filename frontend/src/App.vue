@@ -67,6 +67,10 @@ const settingsError = ref('')
 const settingsPicking = ref(false)
 type XunleiOptions = {concurrent:number; download_kb:number; upload_kb:number; upload:boolean; dynamic_acceleration:boolean}
 const xunleiOptions = ref<XunleiOptions>({concurrent:10,download_kb:0,upload_kb:0,upload:false,dynamic_acceleration:true})
+type Aria2Options = {split:number;connections:number;min_split_mb:number;download_kb:number;connect_timeout:number;timeout:number;max_tries:number;retry_wait:number}
+const aria2Options=ref<Aria2Options>({split:8,connections:8,min_split_mb:10,download_kb:0,connect_timeout:30,timeout:60,max_tries:3,retry_wait:5})
+const aria2SettingsLoaded=ref(false)
+const aria2SettingsError=ref('')
 const sdkSettingsLoaded = ref(false)
 const savingSettings = ref(false)
 const recovering = ref(false)
@@ -176,6 +180,8 @@ async function openSettings() {
   settingsError.value = ''
   directoryError.value = ''
   sdkSettingsLoaded.value = false
+  aria2SettingsLoaded.value = false
+  aria2SettingsError.value = ''
   filter.value = 'settings'
   try {
     await loadAppSettings()
@@ -184,6 +190,11 @@ async function openSettings() {
     xunleiOptions.value = result.options
     sdkSettingsLoaded.value = true
   } catch (e) { settingsError.value = e instanceof Error ? e.message : '无法加载迅雷设置' }
+  try {
+    const result=await api('/api/aria2/settings')
+    aria2Options.value=result.options
+    aria2SettingsLoaded.value=true
+  } catch(e){aria2SettingsError.value=e instanceof Error ? e.message : '无法加载 aria2 设置'}
 }
 async function saveSettings() {
   if (savingSettings.value) return
@@ -191,6 +202,7 @@ async function saveSettings() {
   settingsError.value = ''
   try {
     if (sdkSettingsLoaded.value) await api('/api/xunlei/settings', {method:'PUT',body:JSON.stringify(xunleiOptions.value)})
+    if (aria2SettingsLoaded.value) await api('/api/aria2/settings',{method:'PUT',body:JSON.stringify(aria2Options.value)})
     const patch: {interval:number;max_concurrent:number;auto_retry:number;disk_reserve_mb:number;directory?:string} = {interval:settingsDraft.value.interval,max_concurrent:settingsDraft.value.max_concurrent,auto_retry:settingsDraft.value.auto_retry,disk_reserve_mb:settingsDraft.value.disk_reserve_mb}
     if (settingsDraft.value.directory !== preferences.value.directory) patch.directory = settingsDraft.value.directory
     const result = await api('/api/settings',{method:'PATCH',body:JSON.stringify(patch)})
@@ -484,7 +496,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
     </section>
     </template>
     <section v-else class="settings-page" aria-labelledby="settings-title">
-      <div class="welcome"><div><div class="eyebrow">SETTINGS</div><h1 id="settings-title">设置</h1><p>管理下载偏好与迅雷引擎。</p></div></div>
+      <div class="welcome"><div><div class="eyebrow">SETTINGS</div><h1 id="settings-title">设置</h1><p>管理下载偏好与下载引擎。</p></div></div>
       <div class="panel settings-panel">
     <form @submit.prevent="saveSettings" :aria-busy="savingSettings">
       <div class="settings-body create-form">
@@ -493,6 +505,19 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
         <label><span>下载进度同步间隔</span><select v-model.number="settingsDraft.interval"><option :value="2500">2.5 秒</option><option :value="5000">5 秒</option><option :value="10000">10 秒</option></select><small>仅有下载中、等待中或等待自动重试的任务时同步，页面隐藏时暂停。</small></label>
         <label class="disk-reserve-setting"><span>磁盘保留空间（MB）</span><input v-model.number="settingsDraft.disk_reserve_mb" type="number" min="64" max="102400" required /><small>启动前预估同卷任务所需空间，大小未知时先检查保留空间。下载中低于此值会暂停本应用任务，需释放空间后手动继续；排队任务在空间恢复后自动补位。</small></label>
         <label class="auto-retry-setting"><span>失败后自动重试</span><select v-model.number="settingsDraft.auto_retry"><option :value="0">关闭</option><option v-for="n in 5" :key="n" :value="n">最多 {{ n }} 次</option></select><small>仅对可确认的网络故障或临时服务器错误重试。间隔从 30 秒逐次加倍；授权、链接失效、磁盘和未知错误不自动重试。重启应用后需手动继续已有任务。</small></label>
+        <fieldset v-if="aria2SettingsLoaded" class="sdk-settings" :disabled="savingSettings">
+          <legend>aria2 引擎</legend>
+          <label><span>每个任务的下载分段数</span><input v-model.number="aria2Options.split" type="number" min="1" max="16" required /></label>
+          <label><span>单服务器最大连接数</span><input v-model.number="aria2Options.connections" type="number" min="1" max="16" required /></label>
+          <label><span>最小分段大小（MB）</span><input v-model.number="aria2Options.min_split_mb" type="number" min="1" max="1024" required /></label>
+          <label><span>aria2 总下载限速（KB/s，0 不限速）</span><input v-model.number="aria2Options.download_kb" type="number" min="0" max="1073741824" required /></label>
+          <label><span>连接超时（秒）</span><input v-model.number="aria2Options.connect_timeout" type="number" min="1" max="600" required /></label>
+          <label><span>无数据超时（秒）</span><input v-model.number="aria2Options.timeout" type="number" min="1" max="600" required /></label>
+          <label><span>单次下载最多尝试次数</span><input v-model.number="aria2Options.max_tries" type="number" min="1" max="10" required /></label>
+          <label><span>重试间隔（秒）</span><input v-model.number="aria2Options.retry_wait" type="number" min="0" max="600" required /></label>
+          <small>多连接下载需要源站支持分段请求，不保证增加连接就能提速。分段与超时设置用于新任务及暂停后继续的任务；总限速立即生效。只影响本应用内置 aria2。</small>
+        </fieldset>
+        <p v-else-if="aria2SettingsError" class="error-box form-message" role="alert">{{ aria2SettingsError }}</p>
         <fieldset v-if="sdkSettingsLoaded" class="sdk-settings" :disabled="savingSettings || recovering">
           <legend>迅雷引擎</legend>
           <label><span>最大同时下载任务数</span><input v-model.number="xunleiOptions.concurrent" type="number" min="1" max="100" required /></label>

@@ -74,7 +74,7 @@ func (e *Engine) startProcess(ctx context.Context) (*managedProcess, error) {
 		}
 		e.secret = hex.EncodeToString(secret)
 		e.endpoint = fmt.Sprintf("http://127.0.0.1:%d/jsonrpc", port)
-		config := strings.Join([]string{
+		lines := []string{
 			"daemon=false", "enable-rpc=true", "rpc-listen-all=false", "rpc-allow-origin-all=false", "disable-ipv6=true",
 			"rpc-listen-port=" + strconv.Itoa(port), "rpc-secret=" + e.secret, "listen-port=" + strconv.Itoa(peer),
 			"enable-dht=false", "enable-dht6=false", "enable-peer-exchange=false", "bt-enable-lpd=false",
@@ -82,7 +82,12 @@ func (e *Engine) startProcess(ctx context.Context) (*managedProcess, error) {
 			"continue=false", "allow-overwrite=false", "auto-file-renaming=true", "file-allocation=none",
 			"input-file=" + session, "save-session=" + session, "save-session-interval=5", "force-save=false",
 			"stop-with-process=" + strconv.Itoa(os.Getpid()), "console-log-level=error", "summary-interval=0", "download-result=hide",
-		}, "\n") + "\n"
+		}
+		for key, value := range e.options.globalOptions() {
+			lines = append(lines, key+"="+value)
+		}
+		lines = append(lines, "max-concurrent-downloads=100")
+		config := strings.Join(lines, "\n") + "\n"
 		path := filepath.Join(e.cfg.StateDir, "runtime.conf")
 		if err = os.WriteFile(path, []byte(config), 0600); err != nil {
 			lock.Close()

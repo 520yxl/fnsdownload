@@ -27,12 +27,17 @@ type Engine struct {
 	client           *http.Client
 	next             atomic.Uint64
 	tasks            map[string]engine.Task
+	missing          map[string]bool
 	process          *managedProcess
+	options          Options
+	settingsError    error
 	closed           bool
 }
 
 func NewManaged(cfg Config) *Engine {
-	return &Engine{cfg: cfg, client: &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("aria2 RPC 不允许重定向") }}, tasks: map[string]engine.Task{}}
+	e := &Engine{cfg: cfg, client: &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("aria2 RPC 不允许重定向") }}, tasks: map[string]engine.Task{}}
+	e.loadOptions()
+	return e
 }
 func (e *Engine) Name() string                         { return "aria2" }
 func (e *Engine) Initialize(ctx context.Context) error { return e.Health(ctx) }
@@ -53,20 +58,33 @@ func (e *Engine) call(ctx context.Context, method string, params []any, out any)
 		return errors.New("无法连接 aria2 独立实例")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("aria2 RPC HTTP %d", resp.StatusCode)
-	}
 	var envelope struct {
+		ID     string          `json:"id"`
 		Result json.RawMessage `json:"result"`
 		Error  *struct {
-			Code int `json:"code"`
+			Code    int    `json:"code"`
+			Message string `json:"message"`
 		} `json:"error"`
 	}
 	if err = json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&envelope); err != nil {
-		return errors.New("aria2 RPC 响应无效")
+		return fmt.Errorf("aria2 内部通信失败（%s，HTTP %d）：响应无效", method, resp.StatusCode)
 	}
 	if envelope.Error != nil {
-		return fmt.Errorf("aria2 RPC 错误 %d", envelope.Error.Code)
+		reason := "请求被拒绝"
+		message := strings.ToLower(envelope.Error.Message)
+		if strings.Contains(message, "gid") && strings.Contains(message, "not found") {
+			reason = "任务记录未加载，请点击继续恢复"
+		}
+		if strings.Contains(message, "unauthorized") {
+			reason = "内部实例认证失败，请重启应用"
+		}
+		return &rpcError{Method: method, Code: envelope.Error.Code, Status: resp.StatusCode, Missing: strings.Contains(message, "gid") && strings.Contains(message, "not found"), Reason: reason}
+	}
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("aria2 内部通信失败（%s，HTTP %d）", method, resp.StatusCode)
+	}
+	if envelope.ID != id || len(envelope.Result) == 0 {
+		return errors.New("aria2 RPC 响应标识无效")
 	}
 	if out != nil {
 		return json.Unmarshal(envelope.Result, out)
@@ -74,6 +92,9 @@ func (e *Engine) call(ctx context.Context, method string, params []any, out any)
 	return nil
 }
 func (e *Engine) ready(ctx context.Context) error {
+	if e.settingsError != nil {
+		return e.settingsError
+	}
 	if e.closed {
 		return errors.New("aria2 引擎已关闭")
 	}
@@ -131,7 +152,11 @@ func (e *Engine) Create(ctx context.Context, req engine.CreateRequest) (engine.T
 	if err != nil {
 		return engine.Task{}, errors.New("无法创建独立下载目录")
 	}
-	options := map[string]string{"dir": dir, "pause": "true", "auto-file-renaming": "true", "allow-overwrite": "false"}
+	options := e.options.taskOptions()
+	options["dir"] = dir
+	options["pause"] = "true"
+	options["auto-file-renaming"] = "true"
+	options["allow-overwrite"] = "false"
 	if req.Name != "" {
 		options["out"] = req.Name
 	}
@@ -161,33 +186,32 @@ func (e *Engine) control(ctx context.Context, id, method string) error {
 	if err := e.ready(ctx); err != nil {
 		return err
 	}
+	task, getErr := e.get(ctx, id)
+	if getErr != nil && !(method == "aria2.unpause" && missingTask(getErr)) {
+		return getErr
+	}
+	if method == "aria2.forcePause" && task.Status == engine.StatusPaused {
+		return nil
+	}
 	if method == "aria2.unpause" {
-		task, err := e.get(ctx, id)
-		if err != nil {
-			return err
+		if task.Status == engine.StatusRunning {
+			return nil
 		}
-		if task.Status == engine.StatusFailed {
-			if !filepath.IsAbs(task.Directory) || !strings.HasPrefix(filepath.Base(task.Directory), "MoxYi-aria2-") || task.Name == "" || task.Name == "." || task.Name == ".." || filepath.Base(task.Name) != task.Name || strings.ContainsAny(task.Name, "/\\\x00") {
-				return errors.New("无法安全恢复下载路径")
-			}
-			gid := strings.TrimPrefix(id, "aria2-")
-			// Completed error results cannot be unpaused. Re-add this owned GID and
-			// directory, retaining its control file and partial download for continuation.
-			_ = e.call(ctx, "aria2.removeDownloadResult", []any{gid}, nil)
-			var restored string
-			options := map[string]string{"gid": gid, "dir": task.Directory, "out": task.Name, "pause": "true", "continue": "true", "allow-overwrite": "false", "auto-file-renaming": "false"}
-			if err := e.call(ctx, "aria2.addUri", []any{[]string{task.Source}, options}, &restored); err != nil {
+		if e.missing[id] || getErr != nil || task.Status == engine.StatusFailed {
+			if err := e.rebuild(ctx, task, getErr == nil && !e.missing[id]); err != nil {
 				return err
 			}
-			if restored != gid {
-				return errors.New("aria2 返回了不同的任务标识")
-			}
+		}
+		if err := e.call(ctx, "aria2.changeOption", []any{strings.TrimPrefix(id, "aria2-"), e.options.taskOptions()}, nil); err != nil {
+			return err
 		}
 	}
+
 	if err := e.call(ctx, method, []any{strings.TrimPrefix(id, "aria2-")}, nil); err != nil {
 		return err
 	}
-	task := e.tasks[id]
+	task = e.tasks[id]
+	task.Error = ""
 	task.Status = engine.StatusPaused
 	if method == "aria2.unpause" {
 		task.Status = engine.StatusQueued
@@ -223,8 +247,20 @@ func (e *Engine) get(ctx context.Context, id string) (engine.Task, error) {
 		if task.Status == engine.StatusCompleted || task.Status == engine.StatusFailed {
 			return task, nil
 		}
+		if missingTask(err) {
+			if e.missing == nil {
+				e.missing = make(map[string]bool)
+			}
+			e.missing[id] = true
+			task.Status = engine.StatusPaused
+			task.SpeedBytes = 0
+			task.Error = err.Error()
+			e.tasks[id] = task
+			return task, nil
+		}
 		return task, err
 	}
+	delete(e.missing, id)
 	task.TotalBytes = parse(r.Total)
 	task.CompletedBytes = parse(r.Done)
 	task.SpeedBytes = parse(r.Speed)
@@ -299,7 +335,7 @@ func (e *Engine) Delete(ctx context.Context, id string, removeFiles bool) error 
 		return err
 	}
 	gid := strings.TrimPrefix(id, "aria2-")
-	if task.Status != engine.StatusCompleted && task.Status != engine.StatusFailed && task.Status != engine.StatusRemoved {
+	if !e.missing[id] && task.Status != engine.StatusCompleted && task.Status != engine.StatusFailed && task.Status != engine.StatusRemoved {
 		if err = e.call(ctx, "aria2.forceRemove", []any{gid}, nil); err != nil {
 			return err
 		}
@@ -323,7 +359,7 @@ func (e *Engine) Delete(ctx context.Context, id string, removeFiles bool) error 
 		}
 	}
 	// Removed results may appear asynchronously. Forget only this tracked task.
-	if task.Status == engine.StatusCompleted || task.Status == engine.StatusFailed || task.Status == engine.StatusRemoved {
+	if !e.missing[id] && (task.Status == engine.StatusCompleted || task.Status == engine.StatusFailed || task.Status == engine.StatusRemoved) {
 		if err = e.call(ctx, "aria2.removeDownloadResult", []any{gid}, nil); err != nil && task.Status != engine.StatusCompleted {
 			return err
 		}
@@ -340,6 +376,7 @@ func (e *Engine) Delete(ctx context.Context, id string, removeFiles bool) error 
 		_ = os.Remove(task.Directory)
 	}
 	delete(e.tasks, id)
+	delete(e.missing, id)
 	return nil
 }
 func (e *Engine) Close() error {

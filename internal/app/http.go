@@ -181,9 +181,10 @@ func (h *Handler) Close() error {
 
 func (h *Handler) routes() {
 	h.settingsRoutes()
+	h.aria2Routes()
 	h.xunleiRoutes()
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.26", "runtime": "go", "database": "sqlite"})
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.27", "runtime": "go", "database": "sqlite"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"download_dir": filepath.Clean(h.cfg.DownloadDir), "data_dir": filepath.Clean(h.cfg.DataDir), "database": "sqlite"})
