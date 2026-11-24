@@ -190,6 +190,12 @@ func TestRetryFailedDownloadKeepsIdentity(t *testing.T) {
 			if err == nil && got.Status == status {
 				return got
 			}
+			if err == nil && status == engine.StatusCompleted && got.Status == engine.StatusFailed {
+				var detail map[string]any
+				_ = e.call(ctx, "aria2.tellStatus", []any{strings.TrimPrefix(task.ID, "aria2-"), []string{"status", "errorCode", "errorMessage", "files"}}, &detail)
+				t.Fatalf("retry failed: %v", detail)
+			}
+
 			time.Sleep(50 * time.Millisecond)
 		}
 		t.Fatal("task did not reach", status)
