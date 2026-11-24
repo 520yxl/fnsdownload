@@ -50,6 +50,7 @@ type Task struct {
 }
 
 type CreateRequest struct {
+	Torrent   []byte `json:"-"`
 	URL       string `json:"url"`
 	Directory string `json:"directory"`
 	Name      string `json:"name,omitempty"`

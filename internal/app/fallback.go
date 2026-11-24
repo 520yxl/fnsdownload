@@ -79,7 +79,7 @@ const stalledDownloadTimeout = 2 * time.Minute
 
 // Sampling under queueMu also works when the browser is closed.
 func (h *Handler) shouldFallback(task engine.Task, now time.Time) bool {
-	if !task.AutoEngine || task.HeadersRequired || h.retryBlocked[task.ID] || h.spacePaused[task.ID] != "" || h.spaceWait[task.ID] != "" {
+	if task.Engine == "qbittorrent" || !task.AutoEngine || task.HeadersRequired || h.retryBlocked[task.ID] || h.spacePaused[task.ID] != "" || h.spaceWait[task.ID] != "" {
 		delete(h.progressWatch, task.ID)
 		return false
 	}

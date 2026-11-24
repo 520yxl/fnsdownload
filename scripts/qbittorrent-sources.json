@@ -1,0 +1,38 @@
+{
+  "qtbase.tar.xz": {
+    "url": "https://download.qt.io/archive/qt/6.11/6.11.3/submodules/qtbase-everywhere-src-6.11.3.tar.xz",
+    "sha256": "46de0710b594945a5d446ae44354daa386141c6903c53781b2ca547bc62f8f8f"
+  },
+  "qttools.tar.xz": {
+    "url": "https://download.qt.io/archive/qt/6.11/6.11.3/submodules/qttools-everywhere-src-6.11.3.tar.xz",
+    "sha256": "524ca79ee653fa36d4644ce66a5c0825930ee2550ff1d0987e703a66fd6c61ec"
+  },
+  "qbittorrent.tar.gz": {
+    "url": "https://codeload.github.com/qbittorrent/qBittorrent/tar.gz/refs/tags/release-5.2.4",
+    "sha256": "226a6ad1aa7810fcbfa58b0d28b14feb8e207726cbe774d4d267ce769c19dd6c"
+  },
+  "libtorrent.tar.gz": {
+    "url": "https://codeload.github.com/arvidn/libtorrent/tar.gz/refs/tags/v2.0.11",
+    "sha256": "a317b4b4352bf1b846072dfacee30cd0afccf1ebc04a84273f1ecba930acb802"
+  },
+  "boost.tar.bz2": {
+    "url": "https://archives.boost.io/release/1.85.0/source/boost_1_85_0.tar.bz2",
+    "sha256": "7009fe1faa1697476bdc7027703a2badb84e849b7b0baad5086b087b971f8617"
+  },
+  "qtbase-fix1.diff": {
+    "url": "https://download.qt.io/archive/qt/6.11/CVE-2026-116337-qtbase-6.11-0001.diff",
+    "sha256": "2a5cc5a016bd41b8487555d68ccbbd808a9a418bc457486e9c779d217cb7e31a"
+  },
+  "qtbase-fix2.diff": {
+    "url": "https://download.qt.io/archive/qt/6.11/CVE-2026-116337-qtbase-6.11-0002.diff",
+    "sha256": "ea58081d0999d6e3ea0e40277631fec26589c3e436922bfcfef7f771c626a4f3"
+  },
+  "qtbase-fix3.diff": {
+    "url": "https://download.qt.io/archive/qt/6.11/CVE-2026-105943-qtbase-6.11.diff",
+    "sha256": "2906a569578fadf8122543b4ea4b4bd76a3313855cdad946cc69978568a17308"
+  },
+  "try-signal.tar.gz": {
+    "url": "https://codeload.github.com/arvidn/try_signal/tar.gz/105cce59972f925a33aa6b1c3109e4cd3caf583d",
+    "sha256": "6f111b0d77429a8051be4faed06cf23fb03cf6ee233967c84fdd9d8d3b42ba8e"
+  }
+}

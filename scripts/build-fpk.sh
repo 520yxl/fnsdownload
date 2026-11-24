@@ -19,6 +19,9 @@ cd "$ROOT"
 ARIA2_ROOT="$ROOT/.cache/aria2-runtime"
 python3 "$ROOT/scripts/bundle-aria2.py" "$ARIA2_ROOT"
 export ARIA2_TEST_BINARY="$ARIA2_ROOT/aria2c"
+QB_ROOT="$ROOT/.cache/qbittorrent-runtime"
+python3 "$ROOT/scripts/build-qbittorrent.py"
+export QBITTORRENT_TEST_BINARY="$QB_ROOT/qbittorrent-nox"
 go test ./...
 go vet ./...
 for wizard_file in install upgrade uninstall config; do
@@ -60,6 +63,10 @@ mkdir -p "$WORK_ROOT" "$DIST"
 mkdir -p "$WORK/app/server" "$WORK/app/www" "$WORK/app/ui/images"
 mkdir -p "$WORK/app/server/aria2"
 cp -a "$ARIA2_ROOT/." "$WORK/app/server/aria2/"
+mkdir -p "$WORK/app/server/qbittorrent"
+cp -a "$QB_ROOT/." "$WORK/app/server/qbittorrent/"
+python3 "$ROOT/scripts/check-x86-baseline.py" "$WORK/app/server/qbittorrent/qbittorrent-nox" "$WORK/app/server/qbittorrent/lib/"*.so*
+LD_LIBRARY_PATH="$WORK/app/server/qbittorrent/lib" qemu-x86_64 -cpu qemu64 "$WORK/app/server/qbittorrent/qbittorrent-nox" --version
 python3 "$ROOT/scripts/check-x86-baseline.py" "$WORK/app/server/aria2/aria2c" "$WORK/app/server/aria2/lib/"*.so*
 LD_LIBRARY_PATH="$WORK/app/server/aria2/lib" qemu-x86_64 -cpu qemu64 "$WORK/app/server/aria2/aria2c" --version
 cp "$ROOT/manifest" "$WORK/manifest"
@@ -176,7 +183,7 @@ PY
 APP_TGZ_ENTRY="$(awk '$0 ~ /app[.]tgz$/ {print; exit}' "$DIST/fpk-files.txt")"
 [[ -n "$APP_TGZ_ENTRY" ]] || { echo "FPK is missing app.tgz"; exit 1; }
 tar -xOf "$DIST/fnsdownload-x86_64.fpk" "$APP_TGZ_ENTRY" | tar -tzf - > "$DIST/app-files.txt"
-for required in "server/fnsdownload-amd64" "www/index.html" "www/assets/app.js" "www/assets/app.css" "ui/config" "ui/images/icon_64.png" "ui/images/icon_256.png"; do
+for required in "server/fnsdownload-amd64" "server/qbittorrent/qbittorrent-nox" "www/index.html" "www/assets/app.js" "www/assets/app.css" "ui/config" "ui/images/icon_64.png" "ui/images/icon_256.png"; do
   grep -Eq "(^|\\./)$required$" "$DIST/app-files.txt" || { echo "Missing package entry: $required"; cat "$DIST/app-files.txt"; exit 1; }
 done
 for required in "manifest" "config/privilege" "config/resource" "cmd/main" "cmd/install_init" "cmd/install_callback" "wizard/uninstall" "app.tgz"; do

@@ -16,6 +16,7 @@ import (
 	"github.com/520yxl/fnsdownload/internal/engine"
 	aria2engine "github.com/520yxl/fnsdownload/internal/engine/aria2"
 	httpengine "github.com/520yxl/fnsdownload/internal/engine/http"
+	qbengine "github.com/520yxl/fnsdownload/internal/engine/qbittorrent"
 	xunleiengine "github.com/520yxl/fnsdownload/internal/engine/xunlei"
 	"github.com/520yxl/fnsdownload/internal/store"
 )
@@ -41,6 +42,7 @@ type Handler struct {
 	httpEngine    *httpengine.Engine
 	xunleiEngine  *xunleiengine.Engine
 	aria2Engine   *aria2engine.Engine
+	qbEngine      *qbengine.Engine
 }
 
 func NewHandler(cfg Config) (*Handler, error) {
@@ -68,12 +70,20 @@ func NewHandler(cfg Config) (*Handler, error) {
 			return nil, err
 		}
 	}
+	var qbAdapter *qbengine.Engine
+	if cfg.QBittorrentBinary != "" {
+		qbAdapter = qbengine.NewManaged(qbengine.Config{Binary: cfg.QBittorrentBinary, StateDir: cfg.QBittorrentStateDir})
+		if err := manager.Register(qbAdapter); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	}
 	xunleiAdapter := xunleiengine.New(cfg.Xunlei)
 	if err := manager.Register(xunleiAdapter); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
-	h := &Handler{cfg: cfg, mux: http.NewServeMux(), engines: manager, store: db, httpEngine: httpAdapter, xunleiEngine: xunleiAdapter, aria2Engine: aria2Adapter}
+	h := &Handler{cfg: cfg, mux: http.NewServeMux(), engines: manager, store: db, httpEngine: httpAdapter, xunleiEngine: xunleiAdapter, aria2Engine: aria2Adapter, qbEngine: qbAdapter}
 	if err := h.restoreTasks(); err != nil {
 		_ = manager.Close()
 		_ = db.Close()
@@ -103,6 +113,15 @@ func (h *Handler) restoreTasks() error {
 		}
 		h.retryBlocked[task.ID] = true
 		task.RetryAt = nil
+		if task.Engine == "qbittorrent" && h.qbEngine != nil {
+			native := task
+			native.ID = nativeTaskID(task)
+			native.NativeID = ""
+			restored := bindTask(h.qbEngine.RestoreTask(native), task)
+			if err := h.store.Upsert(ctx, restored); err != nil {
+				return err
+			}
+		}
 		if task.Engine == "aria2" && h.aria2Engine != nil {
 			native := task
 			native.ID = nativeTaskID(task)
@@ -182,9 +201,10 @@ func (h *Handler) Close() error {
 func (h *Handler) routes() {
 	h.settingsRoutes()
 	h.aria2Routes()
+	h.qbRoutes()
 	h.xunleiRoutes()
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.27", "runtime": "go", "database": "sqlite"})
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.28", "runtime": "go", "database": "sqlite"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"download_dir": filepath.Clean(h.cfg.DownloadDir), "data_dir": filepath.Clean(h.cfg.DataDir), "database": "sqlite"})
@@ -289,8 +309,9 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 	h.queueMu.Lock()
 	defer h.queueMu.Unlock()
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
 	var input struct {
+		Torrent        []byte            `json:"torrent,omitempty"`
 		AllowDuplicate bool              `json:"allow_duplicate"`
 		Engine         string            `json:"engine"`
 		URL            string            `json:"url"`
@@ -301,6 +322,21 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, 400, "invalid JSON body")
 		return
+	}
+	if len(input.Torrent) > 0 {
+		hash, err := qbengine.TorrentHash(input.Torrent)
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		input.URL = "magnet:?xt=urn:btih:" + hash
+	}
+	bt := strings.HasPrefix(strings.ToLower(strings.TrimSpace(input.URL)), "magnet:")
+	if bt {
+		if _, err := qbengine.MagnetHash(input.URL); err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
 	}
 	if !input.AllowDuplicate {
 		existing, err := h.store.List(r.Context())
@@ -321,11 +357,19 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 	automatic := input.Engine == "" || input.Engine == "auto"
 	if automatic {
-		input.Engine = h.autoEngine(r.Context(), len(input.Headers) > 0)
+		if bt {
+			input.Engine = "qbittorrent"
+		} else {
+			input.Engine = h.autoEngine(r.Context(), len(input.Headers) > 0)
+		}
 		if input.Engine == "" {
 			writeError(w, 503, "当前没有满足任务要求的可用下载引擎")
 			return
 		}
+	}
+	if bt != (input.Engine == "qbittorrent") {
+		writeError(w, 400, "磁力链接和种子请使用 qBittorrent；普通链接请使用 HTTP 下载引擎")
+		return
 	}
 	if len(input.Headers) > 0 && input.Engine != "xunlei" {
 		writeError(w, 400, "自定义请求头目前仅适用于迅雷引擎")
@@ -349,7 +393,7 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	task, err := e.Create(r.Context(), engine.CreateRequest{URL: input.URL, Directory: dir, Name: input.Name})
+	task, err := e.Create(r.Context(), engine.CreateRequest{URL: input.URL, Directory: dir, Name: input.Name, Torrent: input.Torrent})
 	if err != nil {
 		if input.AllowDuplicate {
 			_ = os.Remove(dir)
@@ -357,7 +401,7 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
-	task.AutoEngine = automatic
+	task.AutoEngine = automatic && !bt
 	task.HeadersRequired = len(input.Headers) > 0
 	task.TriedEngines = []string{task.Engine}
 	task.FallbackRoot = dir
@@ -535,6 +579,9 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 // Preserve query parameters and path case: signed URLs can depend on both.
 func canonicalDownloadURL(raw string) string {
+	if hash, err := qbengine.MagnetHash(raw); err == nil {
+		return "magnet:" + hash
+	}
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
 		return strings.TrimSpace(raw)

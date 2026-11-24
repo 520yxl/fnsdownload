@@ -56,7 +56,11 @@ const connected = ref(false)
 const search = ref('')
 const url = ref('')
 const selectedEngine = ref('auto')
-const engineChoices = [{name:'xunlei',label:'迅雷'}, {name:'aria2',label:'aria2'}, {name:'http',label:'HTTP / HTTPS'}]
+const torrentFile = ref<File | null>(null)
+const qbOptions=ref({download_kb:0,upload_kb:0,connections:200,dht:true,pex:true})
+const qbSettingsLoaded=ref(false)
+const qbSettingsError=ref('')
+const engineChoices = [{name:'qbittorrent',label:'qBittorrent（BT / 磁力）'},{name:'xunlei',label:'迅雷'}, {name:'aria2',label:'aria2'}, {name:'http',label:'HTTP / HTTPS'}]
 const engineName = computed(() => selectedEngine.value === 'auto' ? (['xunlei','aria2','http'].find(name => engines.value.some(e => e.name === name && e.ready)) || '') : selectedEngine.value)
 const supportsHeaders = computed(() => (selectedEngine.value === 'auto' || selectedEngine.value === 'xunlei') && engines.value.some(e => e.name === 'xunlei' && e.ready))
 const directory = ref('')
@@ -162,6 +166,7 @@ function notify(message: string) {
 function openCreate() {
   createAdvanced.value = false
   selectedEngine.value = 'auto'
+  torrentFile.value = null
   directoryError.value = ''
   createError.value = ''
   requestHeaders.value = ''
@@ -180,6 +185,8 @@ async function openSettings() {
   settingsError.value = ''
   directoryError.value = ''
   sdkSettingsLoaded.value = false
+  qbSettingsLoaded.value=false
+  qbSettingsError.value=''
   aria2SettingsLoaded.value = false
   aria2SettingsError.value = ''
   filter.value = 'settings'
@@ -195,6 +202,7 @@ async function openSettings() {
     aria2Options.value=result.options
     aria2SettingsLoaded.value=true
   } catch(e){aria2SettingsError.value=e instanceof Error ? e.message : '无法加载 aria2 设置'}
+  try {qbOptions.value=(await api('/api/qbittorrent/settings')).options;qbSettingsLoaded.value=true} catch(e){qbSettingsError.value=e instanceof Error?e.message:'无法加载 qBittorrent 设置'}
 }
 async function saveSettings() {
   if (savingSettings.value) return
@@ -202,6 +210,7 @@ async function saveSettings() {
   settingsError.value = ''
   try {
     if (sdkSettingsLoaded.value) await api('/api/xunlei/settings', {method:'PUT',body:JSON.stringify(xunleiOptions.value)})
+    if(qbSettingsLoaded.value) await api('/api/qbittorrent/settings',{method:'PUT',body:JSON.stringify(qbOptions.value)})
     if (aria2SettingsLoaded.value) await api('/api/aria2/settings',{method:'PUT',body:JSON.stringify(aria2Options.value)})
     const patch: {interval:number;max_concurrent:number;auto_retry:number;disk_reserve_mb:number;directory?:string} = {interval:settingsDraft.value.interval,max_concurrent:settingsDraft.value.max_concurrent,auto_retry:settingsDraft.value.auto_retry,disk_reserve_mb:settingsDraft.value.disk_reserve_mb}
     if (settingsDraft.value.directory !== preferences.value.directory) patch.directory = settingsDraft.value.directory
@@ -317,12 +326,18 @@ function canonicalURL(value: string) {
  try { const parsed = new URL(value); parsed.hash=''; return parsed.href } catch { return value.trim() }
 }
 async function addTask(duplicates: 'ask' | 'skip' | 'allow' = 'ask') {
-  if (submitting.value || !url.value.trim()) return
-  if (!engines.value.some(e => e.name === engineName.value && e.ready)) { createError.value = '所选下载引擎当前不可用，请选择其他引擎。'; createAdvanced.value = true; return }
+  if (submitting.value || (!url.value.trim() && !torrentFile.value)) return
+  if (selectedEngine.value!=='auto' && !engines.value.some(e => e.name === selectedEngine.value && e.ready)) { createError.value = '所选下载引擎当前不可用，请选择其他引擎。'; createAdvanced.value = true; return }
+  let torrentData = ''
+  if(torrentFile.value){
+    if(url.value.trim()){createError.value='请分别提交链接和种子文件。';return}
+    if(torrentFile.value.size>8*1024*1024){createError.value='种子文件最大 8 MB。';return}
+    try{const bytes=new Uint8Array(await torrentFile.value.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));torrentData=btoa(binary)}catch{createError.value='无法读取种子文件';return}
+  }
   let links = url.value.split(/\r?\n/).map(v => v.trim()).filter(Boolean)
   let headers: Record<string,string> = {}
   try {
-    for (const link of links) { const parsed = new URL(link); if (!['http:','https:'].includes(parsed.protocol)) throw new Error('请输入有效的 HTTP 或 HTTPS 下载链接。') }
+    for (const link of links) { const parsed = new URL(link); if (!['http:','https:','magnet:'].includes(parsed.protocol)) throw new Error('请输入有效的 HTTP、HTTPS 或磁力链接。') }
     if (links.length > 1000) throw new Error('一次最多添加 1000 个链接。')
     for (const line of (supportsHeaders.value ? requestHeaders.value : '').split(/\r?\n/).filter(v => v.trim())) {
       const index = line.indexOf(':'); if (index < 1) throw new Error('请求头格式应为 名称: 值')
@@ -362,11 +377,12 @@ async function addTask(duplicates: 'ask' | 'skip' | 'allow' = 'ask') {
   let startFailed = 0
   let firstError = ''
   try {
+    if(torrentData) links.push('')
     // Each URL goes through the ordinary task endpoint and owns its own task ID.
     // Submit in input order so creation timestamps also preserve batch ordering.
     for (const link of links) {
       try {
-        await api('/api/tasks', { method: 'POST', body: JSON.stringify({ engine: selectedEngine.value, url: link, directory: directory.value.trim(), headers, allow_duplicate: duplicates === 'allow' }) })
+        await api('/api/tasks', { method: 'POST', body: JSON.stringify({ engine: selectedEngine.value, url: link, torrent:torrentData || undefined, directory: directory.value.trim(), headers, allow_duplicate: duplicates === 'allow' }) })
         created++
       } catch (e) {
         if (e instanceof Error && 'taskCreated' in e && e.taskCreated) { created++; startFailed++ }
@@ -505,6 +521,16 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
         <label><span>下载进度同步间隔</span><select v-model.number="settingsDraft.interval"><option :value="2500">2.5 秒</option><option :value="5000">5 秒</option><option :value="10000">10 秒</option></select><small>仅有下载中、等待中或等待自动重试的任务时同步，页面隐藏时暂停。</small></label>
         <label class="disk-reserve-setting"><span>磁盘保留空间（MB）</span><input v-model.number="settingsDraft.disk_reserve_mb" type="number" min="64" max="102400" required /><small>启动前预估同卷任务所需空间，大小未知时先检查保留空间。下载中低于此值会暂停本应用任务，需释放空间后手动继续；排队任务在空间恢复后自动补位。</small></label>
         <label class="auto-retry-setting"><span>失败后自动重试</span><select v-model.number="settingsDraft.auto_retry"><option :value="0">关闭</option><option v-for="n in 5" :key="n" :value="n">最多 {{ n }} 次</option></select><small>仅对可确认的网络故障或临时服务器错误重试。间隔从 30 秒逐次加倍；授权、链接失效、磁盘和未知错误不自动重试。重启应用后需手动继续已有任务。</small></label>
+        <fieldset v-if="qbSettingsLoaded" class="sdk-settings" :disabled="savingSettings">
+          <legend>qBittorrent 引擎</legend>
+          <label><span>总下载限速（KB/s，0 不限速）</span><input v-model.number="qbOptions.download_kb" type="number" min="0" max="1073741824" required /></label>
+          <label><span>总上传限速（KB/s，0 不限速）</span><input v-model.number="qbOptions.upload_kb" type="number" min="0" max="1073741824" required /></label>
+          <label><span>最大连接数</span><input v-model.number="qbOptions.connections" type="number" min="1" max="2000" required /></label>
+          <label class="check-label"><input v-model="qbOptions.dht" type="checkbox" />启用 DHT 网络</label>
+          <label class="check-label"><input v-model="qbOptions.pex" type="checkbox" />启用 Peer Exchange</label>
+          <small>用于磁力和种子下载，下载期间会上传数据，完成后停止做种。配置与任务记录保存在本应用，设置不影响其他 qBittorrent。</small>
+        </fieldset>
+        <p v-else-if="qbSettingsError" class="error-box form-message" role="alert">{{ qbSettingsError }}</p>
         <fieldset v-if="aria2SettingsLoaded" class="sdk-settings" :disabled="savingSettings">
           <legend>aria2 引擎</legend>
           <label><span>每个任务的下载分段数</span><input v-model.number="aria2Options.split" type="number" min="1" max="16" required /></label>
@@ -542,12 +568,13 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
     <div class="modal-header"><div><span class="modal-eyebrow">NEW DOWNLOAD</span><h2 id="create-title">新建下载</h2><p>添加链接，其余交给下载器。</p></div><button class="close-button" @click="createDialog?.close()" :disabled="submitting" aria-label="关闭新建下载">×</button></div>
     <form @submit.prevent="addTask()" :aria-busy="submitting">
       <div class="modal-body create-form">
-        <label class="url-field"><span>下载链接</span><textarea id="download-url" v-model="url" placeholder="粘贴 HTTP / HTTPS 下载地址" required autofocus :disabled="submitting" rows="3"></textarea><small>支持批量下载，每行一个链接。</small></label>
+        <label class="url-field"><span>下载链接</span><textarea id="download-url" v-model="url" placeholder="粘贴 HTTP / HTTPS 或磁力链接" :required="!torrentFile" autofocus :disabled="submitting" rows="3"></textarea><small>支持批量下载，每行一个链接。</small></label>
+        <label><span>或导入种子文件</span><input type="file" accept=".torrent,application/x-bittorrent" :disabled="submitting" @change="torrentFile=($event.target as HTMLInputElement).files?.[0] || null" /><small v-if="torrentFile">{{ torrentFile.name }} · 最多 8 MB</small></label>
         <div class="directory-field"><span>保存目录</span><div class="directory-controls"><input aria-label="保存目录" :value="directory || '默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory()" :disabled="submitting || pickingDirectory">{{ pickingDirectory ? '正在打开…' : '选择目录' }}</button><button v-if="directory" type="button" class="secondary-button" @click="directory=''" :disabled="submitting">重置</button></div><small>通过飞牛选择并授权 NAS 目录，未选择时使用默认目录。</small><p v-if="directoryError" role="alert" class="error-banner">{{ directoryError }}</p></div>
         <div class="create-advanced">
           <button type="button" class="advanced-toggle" :aria-expanded="createAdvanced" aria-controls="create-advanced-options" @click="createAdvanced=!createAdvanced"><span>高级设置</span><svg viewBox="0 0 24 24" :class="{expanded:createAdvanced}" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg></button>
           <div v-show="createAdvanced" id="create-advanced-options" class="advanced-options">
-            <label><span>下载引擎</span><select v-model="selectedEngine" :disabled="submitting" aria-label="下载引擎"><option value="auto">自动智能选择（推荐）</option><option v-for="choice in engineChoices" :key="choice.name" :value="choice.name" :disabled="!engines.some(e => e.name===choice.name && e.ready)">{{ choice.label }}{{ engines.some(e => e.name===choice.name && e.ready) ? '' : '（不可用）' }}</option></select><small>{{ selectedEngine==='auto' ? '优先迅雷，其次 aria2、HTTP；下载失败或连续 2 分钟无进展时自动尝试其他可用引擎。' : '本次下载使用指定引擎，批量链接也使用此引擎。' }}</small></label>
+            <label><span>下载引擎</span><select v-model="selectedEngine" :disabled="submitting" aria-label="下载引擎"><option value="auto">自动智能选择（推荐）</option><option v-for="choice in engineChoices" :key="choice.name" :value="choice.name" :disabled="!engines.some(e => e.name===choice.name && e.ready)">{{ choice.label }}{{ engines.some(e => e.name===choice.name && e.ready) ? '' : '（不可用）' }}</option></select><small>{{ selectedEngine==='auto' ? '磁力和种子使用 qBittorrent；普通链接优先迅雷，其次 aria2、HTTP，并支持自动切换。' : '本次下载使用指定引擎，批量链接也使用此引擎。' }}</small></label>
 
         <template v-if="supportsHeaders">
           <label><span>自定义 HTTP 请求头（单文件任务）</span><textarea v-model="requestHeaders" rows="2" :disabled="submitting" placeholder="Referer: https://example.com/" /><small>每行一个 名称: 值。请求头不保存到应用数据库。</small></label>
