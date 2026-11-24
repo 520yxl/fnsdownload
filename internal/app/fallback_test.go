@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -105,7 +106,7 @@ func TestFallbackKeepsIdentityQueueAndFileIsolation(t *testing.T) {
 		t.Fatal("fallback not queued")
 	}
 	records, _ := h.store.List(ctx)
-	if len(records) != 1 || records[0].ElapsedMS != 42000 {
+	if len(records) != 1 || records[0].ElapsedMS != 42000 || !slices.Contains(records[0].RetiredNativeIDs, "xunlei/stable") {
 		t.Fatalf("history split or elapsed lost: %#v", records)
 	}
 	// The shared scheduler starts the new native task using the stable ID binding.
@@ -141,6 +142,9 @@ func TestFallbackKeepsIdentityQueueAndFileIsolation(t *testing.T) {
 	last, ok := h.fallbackTask(ctx, failed)
 	if !ok || last.Engine != "http" {
 		t.Fatalf("next engine not selected: %#v", last)
+	}
+	if !slices.Contains(last.RetiredNativeIDs, "aria2/aria2-native") || !slices.Contains(last.RetiredNativeIDs, "xunlei/stable") {
+		t.Fatal("retired native bindings lost", last.RetiredNativeIDs)
 	}
 	last.Status = engine.StatusFailed
 	last.Error = "HTTP status 503"

@@ -27,6 +27,7 @@ func bindTask(raw, saved engine.Task) engine.Task {
 	raw.TriedEngines = saved.TriedEngines
 	raw.FallbackRoot = saved.FallbackRoot
 	raw.EngineNote = saved.EngineNote
+	raw.RetiredNativeIDs = saved.RetiredNativeIDs
 	return raw
 }
 func nativeTaskID(task engine.Task) string {
@@ -154,6 +155,7 @@ func (h *Handler) fallbackTask(ctx context.Context, task engine.Task) (engine.Ta
 		native := replacement.ID
 		replacement = bindTask(replacement, task)
 		replacement.NativeID = native
+		replacement.RetiredNativeIDs = append(append([]string(nil), task.RetiredNativeIDs...), task.Engine+"/"+nativeTaskID(task))
 		replacement.Status = engine.StatusQueued
 		replacement.SpeedBytes = 0
 		replacement.Error = ""

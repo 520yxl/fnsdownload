@@ -134,14 +134,25 @@ func (h *Handler) xunleiRoutes() {
 			return
 		}
 		bindings := make(map[string]engine.Task)
+		retired := make(map[string]bool)
+		publicIDs := make(map[string]bool)
 		for _, saved := range savedTasks {
+			publicIDs[saved.ID] = true
+			for _, id := range saved.RetiredNativeIDs {
+				retired[id] = true
+			}
 			if saved.Engine == "xunlei" {
 				bindings[nativeTaskID(saved)] = saved
 			}
 		}
 		for _, task := range tasks {
+			if retired["xunlei/"+task.ID] {
+				continue
+			}
 			if saved, ok := bindings[task.ID]; ok {
 				task = bindTask(task, saved)
+			} else if publicIDs[task.ID] {
+				continue
 			}
 			if err = h.store.Upsert(r.Context(), task); err != nil {
 				writeError(w, 500, "无法保存恢复的任务")

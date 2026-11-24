@@ -23,12 +23,13 @@ const (
 )
 
 type Task struct {
-	NativeID        string   `json:"native_id,omitempty"`
-	AutoEngine      bool     `json:"auto_engine,omitempty"`
-	HeadersRequired bool     `json:"headers_required,omitempty"`
-	TriedEngines    []string `json:"tried_engines,omitempty"`
-	FallbackRoot    string   `json:"fallback_root,omitempty"`
-	EngineNote      string   `json:"engine_note,omitempty"`
+	RetiredNativeIDs []string `json:"retired_native_ids,omitempty"`
+	NativeID         string   `json:"native_id,omitempty"`
+	AutoEngine       bool     `json:"auto_engine,omitempty"`
+	HeadersRequired  bool     `json:"headers_required,omitempty"`
+	TriedEngines     []string `json:"tried_engines,omitempty"`
+	FallbackRoot     string   `json:"fallback_root,omitempty"`
+	EngineNote       string   `json:"engine_note,omitempty"`
 
 	ElapsedMS      int64      `json:"elapsed_ms"`
 	Retryable      bool       `json:"retryable,omitempty"`
