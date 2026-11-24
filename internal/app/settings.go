@@ -9,13 +9,14 @@ import (
 )
 
 type appSettings struct {
-	Directory string `json:"directory"`
-	Interval  int    `json:"interval"`
-	Theme     string `json:"theme"`
+	MaxConcurrent int    `json:"max_concurrent"`
+	Directory     string `json:"directory"`
+	Interval      int    `json:"interval"`
+	Theme         string `json:"theme"`
 }
 
 func (h *Handler) readSettings() (appSettings, error) {
-	value := appSettings{Interval: 2500, Theme: "auto"}
+	value := appSettings{Interval: 2500, Theme: "auto", MaxConcurrent: 5}
 	data, err := os.ReadFile(filepath.Join(h.cfg.DataDir, "settings.json"))
 	if os.IsNotExist(err) {
 		return value, nil
@@ -29,6 +30,9 @@ func (h *Handler) readSettings() (appSettings, error) {
 	return value, validateAppSettings(value)
 }
 func validateAppSettings(v appSettings) error {
+	if v.MaxConcurrent < 1 || v.MaxConcurrent > 100 {
+		return errors.New("同时下载数必须为 1 到 100")
+	}
 	if v.Interval != 2500 && v.Interval != 5000 && v.Interval != 10000 {
 		return errors.New("无效的同步间隔")
 	}
@@ -59,9 +63,10 @@ func (h *Handler) settingsRoutes() {
 			return
 		}
 		var patch struct {
-			Directory *string `json:"directory"`
-			Interval  *int    `json:"interval"`
-			Theme     *string `json:"theme"`
+			MaxConcurrent *int    `json:"max_concurrent"`
+			Directory     *string `json:"directory"`
+			Interval      *int    `json:"interval"`
+			Theme         *string `json:"theme"`
 		}
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
 		decoder.DisallowUnknownFields()
@@ -91,6 +96,9 @@ func (h *Handler) settingsRoutes() {
 			} else {
 				value.Directory = ""
 			}
+		}
+		if patch.MaxConcurrent != nil {
+			value.MaxConcurrent = *patch.MaxConcurrent
 		}
 		if patch.Interval != nil {
 			value.Interval = *patch.Interval

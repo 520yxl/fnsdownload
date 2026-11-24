@@ -20,15 +20,20 @@ import (
 )
 
 type Handler struct {
-	settingsMu   sync.Mutex
-	cfg          Config
-	mux          *http.ServeMux
-	handler      http.Handler
-	engines      *engine.Manager
-	store        *store.Store
-	httpEngine   *httpengine.Engine
-	xunleiEngine *xunleiengine.Engine
-	aria2Engine  *aria2engine.Engine
+	queueFailures map[string]string
+	queueMu       sync.Mutex
+	queue         map[string]engine.Engine
+	queueCancel   context.CancelFunc
+	queueDone     chan struct{}
+	settingsMu    sync.Mutex
+	cfg           Config
+	mux           *http.ServeMux
+	handler       http.Handler
+	engines       *engine.Manager
+	store         *store.Store
+	httpEngine    *httpengine.Engine
+	xunleiEngine  *xunleiengine.Engine
+	aria2Engine   *aria2engine.Engine
 }
 
 func NewHandler(cfg Config) (*Handler, error) {
@@ -67,6 +72,7 @@ func NewHandler(cfg Config) (*Handler, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	h.startQueue()
 	h.routes()
 	prefix := strings.TrimRight(cfg.GatewayPrefix, "/")
 	if prefix == "" {
@@ -109,6 +115,12 @@ func (h *Handler) restoreTasks() error {
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.handler.ServeHTTP(w, r) }
 func (h *Handler) Close() error {
+	if h.queueCancel != nil {
+		h.queueCancel()
+		<-h.queueDone
+	}
+	h.queueMu.Lock()
+	defer h.queueMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	var first error
@@ -144,7 +156,7 @@ func (h *Handler) routes() {
 	h.settingsRoutes()
 	h.xunleiRoutes()
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.21", "runtime": "go", "database": "sqlite"})
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.22", "runtime": "go", "database": "sqlite"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"download_dir": filepath.Clean(h.cfg.DownloadDir), "data_dir": filepath.Clean(h.cfg.DataDir), "database": "sqlite"})
@@ -181,6 +193,8 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 	if !requireGatewayUser(w, r) {
 		return
 	}
+	h.queueMu.Lock()
+	defer h.queueMu.Unlock()
 	out := make(map[string]engine.Task)
 	for _, name := range h.engines.Names() {
 		e, _ := h.engines.Get(name)
@@ -189,6 +203,15 @@ func (h *Handler) listTasks(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, task := range items {
+			if _, waiting := h.queue[task.ID]; waiting {
+				task.Status = engine.StatusQueued
+				task.SpeedBytes = 0
+			}
+			if reason, failed := h.queueFailures[task.ID]; failed {
+				task.Status = engine.StatusFailed
+				task.Error = reason
+				task.SpeedBytes = 0
+			}
 			out[task.ID] = task
 			_ = h.store.Upsert(r.Context(), task)
 		}
@@ -218,6 +241,8 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 	if !requireGatewayUser(w, r) {
 		return
 	}
+	h.queueMu.Lock()
+	defer h.queueMu.Unlock()
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var input struct {
 		Engine    string            `json:"engine"`
@@ -273,16 +298,21 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err = e.Start(r.Context(), task.ID); err != nil {
+	if err = h.enqueue(r.Context(), e, task.ID); err != nil {
 		task.Status = engine.StatusFailed
 		task.Error = err.Error()
 		task.UpdatedAt = time.Now().UTC()
 		_ = h.store.Upsert(r.Context(), task)
-		writeError(w, 502, err.Error())
+		// Creation succeeded even though starting failed. Return its identity so
+		// batch clients do not retry this URL and create a duplicate task.
+		writeJSON(w, 502, map[string]any{"error": err.Error(), "task_id": task.ID})
 		return
 	}
 	if updated, getErr := e.Get(r.Context(), task.ID); getErr == nil {
 		task = updated
+	}
+	if _, waiting := h.queue[task.ID]; waiting {
+		task.Status = engine.StatusQueued
 	}
 	_ = h.store.Upsert(r.Context(), task)
 	writeJSON(w, 202, task)
@@ -292,6 +322,8 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 	if !requireGatewayUser(w, r) {
 		return
 	}
+	h.queueMu.Lock()
+	defer h.queueMu.Unlock()
 	id, action := r.PathValue("id"), r.PathValue("action")
 	var selected engine.Engine
 	for _, name := range h.engines.Names() {
@@ -310,7 +342,7 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 	case "pause":
 		err = selected.Pause(r.Context(), id)
 	case "resume":
-		err = selected.Resume(r.Context(), id)
+		err = h.enqueue(r.Context(), selected, id)
 	case "delete", "delete-files":
 		err = selected.Delete(r.Context(), id, action == "delete-files")
 	default:
@@ -321,12 +353,19 @@ func (h *Handler) taskAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, err.Error())
 		return
 	}
+	if action != "resume" {
+		delete(h.queue, id)
+		delete(h.queueFailures, id)
+	}
 	if action == "delete" || action == "delete-files" {
 		if err := h.store.Delete(r.Context(), id); err != nil {
 			writeError(w, 500, "could not remove task record")
 			return
 		}
 	} else if task, getErr := selected.Get(r.Context(), id); getErr == nil {
+		if _, waiting := h.queue[id]; waiting {
+			task.Status = engine.StatusQueued
+		}
 		_ = h.store.Upsert(r.Context(), task)
 	}
 	w.WriteHeader(http.StatusNoContent)

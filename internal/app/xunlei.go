@@ -90,41 +90,7 @@ func (h *Handler) xunleiRoutes() {
 		if !requireGatewayUser(w, r) {
 			return
 		}
-		e, err := h.getXunleiEngine()
-		if err != nil {
-			writeError(w, 503, err.Error())
-			return
-		}
-		var input struct {
-			Name       string   `json:"name"`
-			Directory  string   `json:"directory"`
-			URLs       []string `json:"urls"`
-			Concurrent uint32   `json:"concurrent"`
-		}
-		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024*1024)).Decode(&input) != nil {
-			writeError(w, 400, "无效的批量任务")
-			return
-		}
-		dir, err := h.authorizedDirectory(r, input.Directory)
-		if err != nil {
-			writeError(w, 400, err.Error())
-			return
-		}
-		task, err := e.CreateBatch(r.Context(), input.Name, dir, input.URLs, input.Concurrent)
-		if err != nil {
-			writeError(w, 400, err.Error())
-			return
-		}
-		if err = h.store.Upsert(r.Context(), task); err != nil {
-			_ = e.Delete(r.Context(), task.ID, false)
-			writeError(w, 500, "无法保存批量任务")
-			return
-		}
-		if err = e.Start(r.Context(), task.ID); err != nil {
-			writeError(w, 502, err.Error())
-			return
-		}
-		writeJSON(w, 202, task)
+		writeError(w, 400, "请使用独立任务接口批量添加链接")
 	})
 	h.mux.HandleFunc("POST /api/xunlei/recover", func(w http.ResponseWriter, r *http.Request) {
 		if !requireGatewayUser(w, r) {
