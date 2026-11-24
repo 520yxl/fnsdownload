@@ -296,8 +296,19 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
+	// Explicit duplicate downloads must not share partial files with existing tasks.
+	if input.AllowDuplicate {
+		dir, err = os.MkdirTemp(dir, "MoxYi-repeat-")
+		if err != nil {
+			writeError(w, 500, "无法创建独立下载目录")
+			return
+		}
+	}
 	task, err := e.Create(r.Context(), engine.CreateRequest{URL: input.URL, Directory: dir, Name: input.Name})
 	if err != nil {
+		if input.AllowDuplicate {
+			_ = os.Remove(dir)
+		}
 		writeError(w, 400, err.Error())
 		return
 	}

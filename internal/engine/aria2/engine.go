@@ -145,6 +145,9 @@ func (e *Engine) Create(ctx context.Context, req engine.CreateRequest) (engine.T
 	if name == "" {
 		name = filepath.Base(u.Path)
 	}
+	if name == "" || name == "." || name == ".." || name == string(filepath.Separator) {
+		name = fmt.Sprintf("download-%d", now.UnixNano())
+	}
 	task := engine.Task{ID: "aria2-" + gid, Engine: e.Name(), Source: req.URL, Name: name, Directory: dir, Status: engine.StatusPaused, CreatedAt: now, UpdatedAt: now}
 	e.tasks[task.ID] = task
 	return task, nil
@@ -164,7 +167,7 @@ func (e *Engine) control(ctx context.Context, id, method string) error {
 			return err
 		}
 		if task.Status == engine.StatusFailed {
-			if !filepath.IsAbs(task.Directory) || !strings.HasPrefix(filepath.Base(task.Directory), "MoxYi-aria2-") || task.Name == "" || filepath.Base(task.Name) != task.Name || strings.ContainsAny(task.Name, "/\\\x00") {
+			if !filepath.IsAbs(task.Directory) || !strings.HasPrefix(filepath.Base(task.Directory), "MoxYi-aria2-") || task.Name == "" || task.Name == "." || task.Name == ".." || filepath.Base(task.Name) != task.Name || strings.ContainsAny(task.Name, "/\\\x00") {
 				return errors.New("无法安全恢复下载路径")
 			}
 			gid := strings.TrimPrefix(id, "aria2-")
@@ -241,8 +244,11 @@ func (e *Engine) get(ctx context.Context, id string) (engine.Task, error) {
 	default:
 		task.Status = engine.StatusQueued
 	}
-	if len(r.Files) > 0 {
-		task.Name = filepath.Base(r.Files[0].Path)
+	if len(r.Files) > 0 && r.Files[0].Path != "" {
+		name := filepath.Base(r.Files[0].Path)
+		if name != "." && name != ".." && name != string(filepath.Separator) {
+			task.Name = name
+		}
 	}
 	if task.Status != engine.StatusRunning {
 		task.SpeedBytes = 0

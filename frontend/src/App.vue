@@ -485,7 +485,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
   </dialog>
   <dialog ref="duplicateDialog" class="modal remove-modal" aria-labelledby="duplicate-title" @cancel="cancelWhileBusy($event, submitting)">
     <div class="modal-header"><h2 id="duplicate-title">发现 {{ duplicateCount }} 个重复链接</h2></div>
-    <div class="modal-body"><p>这些链接已在任务列表中，或在本次输入中重复出现。是否跳过？</p><p class="hint">再次下载会创建独立任务。</p></div>
+    <div class="modal-body"><p>这些链接已在任务列表中，或在本次输入中重复出现。是否跳过？</p><p class="hint">再次下载会创建独立任务，文件保存到独立子目录。</p></div>
     <div class="modal-footer"><button class="secondary-button" @click="duplicateDialog?.close()" :disabled="submitting">返回编辑</button><button class="secondary-button" @click="addTask('allow')" :disabled="submitting">仍然下载全部</button><button class="primary-button" @click="addTask('skip')" :disabled="submitting">跳过重复链接</button></div>
   </dialog>
   <dialog ref="detailsDialog" class="modal detail-modal" aria-labelledby="details-title" @cancel="cancelWhileBusy($event, !!pendingTask)">
