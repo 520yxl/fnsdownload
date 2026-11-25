@@ -115,8 +115,25 @@ func (e *Engine) request(c context.Context, path, kind string, b io.Reader, out 
 	if err != nil {
 		return err
 	}
-	if (path == "auth/login" || path == "torrents/add") && strings.TrimSpace(string(v)) != "Ok." && strings.TrimSpace(string(v)) != "" {
-		return errors.New("qBittorrent 拒绝了请求")
+	value := strings.TrimSpace(string(v))
+	if path == "auth/login" && value != "" && value != "Ok." {
+		return errors.New("qBittorrent 登录未成功")
+	}
+	if path == "torrents/add" && value != "" && value != "Ok." {
+		var result struct {
+			Success int      `json:"success_count"`
+			Failure int      `json:"failure_count"`
+			Pending int      `json:"pending_count"`
+			IDs     []string `json:"added_torrent_ids"`
+		}
+		if json.Unmarshal(v, &result) != nil || result.Failure != 0 || result.Success+result.Pending != 1 {
+			return errors.New("qBittorrent 未能添加此种子")
+		}
+		for _, hash := range result.IDs {
+			if !validHash(hash, 40) {
+				return errors.New("qBittorrent 返回了无效的种子标识")
+			}
+		}
 	}
 	return nil
 }

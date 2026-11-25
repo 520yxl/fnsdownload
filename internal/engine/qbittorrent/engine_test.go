@@ -73,7 +73,7 @@ func TestPrivateRequestsAndOwnership(t *testing.T) {
 			if r.FormValue("stopped") != "true" {
 				t.Error("task autostarted")
 			}
-			w.WriteHeader(200)
+			fmt.Fprintf(w, `{"success_count":1,"failure_count":0,"pending_count":0,"added_torrent_ids":["%s"]}`, hash)
 			return
 		}
 		_ = r.ParseForm()
