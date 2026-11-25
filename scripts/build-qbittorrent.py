@@ -36,7 +36,14 @@ if 'try-signal.tar.gz' in archives:
  signal=unpack('try-signal.tar.gz');shutil.copytree(signal,lt/'deps/try_signal',dirs_exist_ok=True)
 for patch in ['qtbase-fix1.diff','qtbase-fix2.diff','qtbase-fix3.diff']:
  marker=qt/('.'+patch)
- if not marker.exists():run(['patch','-p1','--forward','-i',archives[patch]],qt);marker.touch()
+ if not marker.exists():
+  check=subprocess.run(['patch','-p1','--dry-run','--forward','-i',str(archives[patch])],cwd=qt,capture_output=True)
+  if check.returncode==0:run(['patch','-p1','--forward','-i',archives[patch]],qt)
+  else:
+   reverse=subprocess.run(['patch','-p1','--dry-run','--reverse','-i',str(archives[patch])],cwd=qt,capture_output=True)
+   if reverse.returncode!=0:sys.exit('Security patch neither applies nor is already present: '+patch)
+   print('Verified security fix already included upstream:',patch,flush=True)
+  marker.touch()
 def cmake(source,name,opts):
  build=cache/('build-'+name)
  run(['cmake','-S',source,'-B',build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release','-DCMAKE_INSTALL_PREFIX='+str(prefix),'-DCMAKE_PREFIX_PATH='+str(prefix),'-DCMAKE_BUILD_RPATH='+str(prefix/'lib'),*opts])

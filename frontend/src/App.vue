@@ -57,11 +57,15 @@ const search = ref('')
 const url = ref('')
 const selectedEngine = ref('auto')
 const torrentFile = ref<File | null>(null)
+const torrentInput=ref<HTMLInputElement|null>(null)
 const qbOptions=ref({download_kb:0,upload_kb:0,connections:200,dht:true,pex:true})
 const qbSettingsLoaded=ref(false)
 const qbSettingsError=ref('')
 const engineChoices = [{name:'qbittorrent',label:'qBittorrent（BT / 磁力）'},{name:'xunlei',label:'迅雷'}, {name:'aria2',label:'aria2'}, {name:'http',label:'HTTP / HTTPS'}]
-const engineName = computed(() => selectedEngine.value === 'auto' ? (['xunlei','aria2','http'].find(name => engines.value.some(e => e.name === name && e.ready)) || '') : selectedEngine.value)
+const canCreate=computed(()=>{
+ const names=torrentFile.value?['qbittorrent']:url.value.split(/\r?\n/).map(v=>v.trim()).filter(Boolean).map(v=>v.toLowerCase().startsWith('magnet:')?'qbittorrent':'http')
+ return names.length>0&&names.every(kind=>{const choices=selectedEngine.value==='auto'?(kind==='qbittorrent'?['qbittorrent']:['xunlei','aria2','http']):[selectedEngine.value];return choices.some(name=>(kind==='qbittorrent')===(name==='qbittorrent')&&engines.value.some(e=>e.name===name&&e.ready))})
+})
 const supportsHeaders = computed(() => (selectedEngine.value === 'auto' || selectedEngine.value === 'xunlei') && engines.value.some(e => e.name === 'xunlei' && e.ready))
 const directory = ref('')
 type Preferences = { directory: string; interval: number; max_concurrent: number; auto_retry: number; disk_reserve_mb: number }
@@ -167,6 +171,7 @@ function openCreate() {
   createAdvanced.value = false
   selectedEngine.value = 'auto'
   torrentFile.value = null
+  if(torrentInput.value) torrentInput.value.value=''
   directoryError.value = ''
   createError.value = ''
   requestHeaders.value = ''
@@ -332,7 +337,8 @@ async function addTask(duplicates: 'ask' | 'skip' | 'allow' = 'ask') {
   if(torrentFile.value){
     if(url.value.trim()){createError.value='请分别提交链接和种子文件。';return}
     if(torrentFile.value.size>8*1024*1024){createError.value='种子文件最大 8 MB。';return}
-    try{const bytes=new Uint8Array(await torrentFile.value.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));torrentData=btoa(binary)}catch{createError.value='无法读取种子文件';return}
+    submitting.value=true
+    try{const bytes=new Uint8Array(await torrentFile.value.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));torrentData=btoa(binary)}catch{createError.value='无法读取种子文件';return}finally{submitting.value=false}
   }
   let links = url.value.split(/\r?\n/).map(v => v.trim()).filter(Boolean)
   let headers: Record<string,string> = {}
@@ -569,7 +575,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
     <form @submit.prevent="addTask()" :aria-busy="submitting">
       <div class="modal-body create-form">
         <label class="url-field"><span>下载链接</span><textarea id="download-url" v-model="url" placeholder="粘贴 HTTP / HTTPS 或磁力链接" :required="!torrentFile" autofocus :disabled="submitting" rows="3"></textarea><small>支持批量下载，每行一个链接。</small></label>
-        <label><span>或导入种子文件</span><input type="file" accept=".torrent,application/x-bittorrent" :disabled="submitting" @change="torrentFile=($event.target as HTMLInputElement).files?.[0] || null" /><small v-if="torrentFile">{{ torrentFile.name }} · 最多 8 MB</small></label>
+        <label><span>或导入种子文件</span><input ref="torrentInput" type="file" accept=".torrent,application/x-bittorrent" :disabled="submitting" @change="torrentFile=($event.target as HTMLInputElement).files?.[0] || null" /><small v-if="torrentFile">{{ torrentFile.name }} · 最多 8 MB</small></label>
         <div class="directory-field"><span>保存目录</span><div class="directory-controls"><input aria-label="保存目录" :value="directory || '默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory()" :disabled="submitting || pickingDirectory">{{ pickingDirectory ? '正在打开…' : '选择目录' }}</button><button v-if="directory" type="button" class="secondary-button" @click="directory=''" :disabled="submitting">重置</button></div><small>通过飞牛选择并授权 NAS 目录，未选择时使用默认目录。</small><p v-if="directoryError" role="alert" class="error-banner">{{ directoryError }}</p></div>
         <div class="create-advanced">
           <button type="button" class="advanced-toggle" :aria-expanded="createAdvanced" aria-controls="create-advanced-options" @click="createAdvanced=!createAdvanced"><span>高级设置</span><svg viewBox="0 0 24 24" :class="{expanded:createAdvanced}" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg></button>
@@ -584,7 +590,7 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
         <div v-if="createError" class="error-box form-message" role="alert">{{ createError }}</div>
         <p v-if="!engines.some(e => e.ready)" class="hint form-message">当前没有可用引擎，请稍后重试。</p>
       </div>
-      <div class="modal-footer"><span>文件保存在你的 NAS</span><button class="secondary-button" type="button" @click="createDialog?.close()" :disabled="submitting">取消</button><button class="primary-button" type="submit" :disabled="submitting || !url.trim() || !engines.some(e => e.name === engineName && e.ready)">{{ submitting ? '正在创建…' : '开始下载' }}</button></div>
+      <div class="modal-footer"><span>文件保存在你的 NAS</span><button class="secondary-button" type="button" @click="createDialog?.close()" :disabled="submitting">取消</button><button class="primary-button" type="submit" :disabled="submitting || !canCreate">{{ submitting ? '正在创建…' : '开始下载' }}</button></div>
     </form>
   </dialog>
   <dialog ref="duplicateDialog" class="modal remove-modal" aria-labelledby="duplicate-title" @cancel="cancelWhileBusy($event, submitting)">

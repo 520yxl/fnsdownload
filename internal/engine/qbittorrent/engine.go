@@ -70,7 +70,15 @@ func (e *Engine) request(c context.Context, path, kind string, b io.Reader, out 
 	if e.endpoint == "" {
 		return errors.New("qBittorrent 独立实例尚未启动")
 	}
-	req, err := http.NewRequestWithContext(c, "POST", e.endpoint+"/api/v2/"+path, b)
+	var body []byte
+	if b != nil {
+		var err error
+		body, err = io.ReadAll(io.LimitReader(b, 12<<20))
+		if err != nil {
+			return err
+		}
+	}
+	req, err := http.NewRequestWithContext(c, "POST", e.endpoint+"/api/v2/"+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -79,6 +87,22 @@ func (e *Engine) request(c context.Context, path, kind string, b io.Reader, out 
 	resp, err := e.client.Do(req)
 	if err != nil {
 		return errors.New("无法连接 qBittorrent 独立实例")
+	}
+	if (resp.StatusCode == 401 || resp.StatusCode == 403) && path != "auth/login" && e.password != "" {
+		resp.Body.Close()
+		if err = e.form(c, "auth/login", url.Values{"username": {"moxyi"}, "password": {e.password}}, nil); err != nil {
+			return err
+		}
+		req, err = http.NewRequestWithContext(c, "POST", e.endpoint+"/api/v2/"+path, bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", kind)
+		req.Header.Set("Referer", e.endpoint+"/")
+		resp, err = e.client.Do(req)
+		if err != nil {
+			return errors.New("qBittorrent 内部连接失败")
+		}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
@@ -262,6 +286,9 @@ func (e *Engine) Start(c context.Context, id string) error {
 	if _, err := e.get(c, id); err != nil {
 		return err
 	}
+	if e.tasks[id].Status == engine.StatusCompleted {
+		return nil
+	}
 	if e.tasks[id].Status == engine.StatusFailed {
 		return errors.New(e.tasks[id].Error)
 	}
@@ -339,7 +366,7 @@ func (e *Engine) get(c context.Context, id string) (engine.Task, error) {
 	case v.State == "error" || v.State == "missingFiles":
 		t.Status = engine.StatusFailed
 		t.Error = "BT 下载失败，请检查保存目录、权限和磁盘空间"
-	case v.Progress >= 1 && v.Size > 0:
+	case v.Progress >= 1 && !strings.Contains(strings.ToLower(v.State), "meta"):
 		t.Status = engine.StatusCompleted
 		t.SpeedBytes = 0
 		if v.State != "stoppedUP" {
@@ -378,6 +405,9 @@ func (e *Engine) List(c context.Context) ([]engine.Task, error) {
 func (e *Engine) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.closed {
+		return nil
+	}
 	e.closed = true
 	if e.process != nil {
 		return e.stopProcess()
