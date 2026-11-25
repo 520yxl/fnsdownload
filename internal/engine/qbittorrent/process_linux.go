@@ -78,6 +78,19 @@ func (e *Engine) startProcess(c context.Context) (*managedProcess, error) {
 	if err = os.Chmod(path, 0600); err != nil {
 		return nil, err
 	}
+	// qB prefers _new after an unclean exit. Keep its authentication and
+	// binding configuration consistent with the fresh runtime configuration.
+	recovery := filepath.Join(configDir, "qBittorrent_new.conf")
+	if _, statErr := os.Stat(recovery); statErr == nil {
+		if err = os.WriteFile(recovery, []byte(config), 0600); err != nil {
+			return nil, err
+		}
+		if err = os.Chmod(recovery, 0600); err != nil {
+			return nil, err
+		}
+	} else if !os.IsNotExist(statErr) {
+		return nil, statErr
+	}
 	if err = e.parkResumeData(); err != nil {
 		return nil, err
 	}
