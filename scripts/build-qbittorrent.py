@@ -49,14 +49,16 @@ def cmake(source,name,opts):
  run(['cmake','-S',source,'-B',build,'-G','Ninja','-DCMAKE_BUILD_TYPE=Release','-DCMAKE_INSTALL_PREFIX='+str(prefix),'-DCMAKE_PREFIX_PATH='+str(prefix),'-DCMAKE_BUILD_RPATH='+str(prefix/'lib'),*opts])
  run(['cmake','--build',build,'--parallel',jobs]);run(['cmake','--install',build])
 if not (prefix/'lib/cmake/Qt6Core/Qt6CoreConfig.cmake').exists():
- cmake(qt,'qt',['-DQT_BUILD_TESTS=OFF','-DQT_BUILD_EXAMPLES=OFF','-DFEATURE_gui=OFF','-DFEATURE_widgets=OFF','-DFEATURE_opengl=OFF','-DFEATURE_dbus=OFF','-DFEATURE_icu=OFF','-DFEATURE_x86intrin=OFF','-DFEATURE_openssl_linked=ON','-DFEATURE_system_sqlite=ON','-DFEATURE_glib=OFF'])
+ cmake(qt,'qt',['-DQT_BUILD_TESTS=OFF','-DQT_BUILD_EXAMPLES=OFF','-DFEATURE_gui=OFF','-DFEATURE_widgets=OFF','-DFEATURE_opengl=OFF','-DFEATURE_dbus=OFF','-DFEATURE_icu=OFF','-DFEATURE_openssl_linked=ON','-DFEATURE_system_sqlite=ON','-DFEATURE_glib=OFF'])
 if not (prefix/'lib/cmake/Qt6LinguistTools/Qt6LinguistToolsConfig.cmake').exists():
  cmake(tools,'qttools',['-DQT_BUILD_TESTS=OFF','-DQT_BUILD_EXAMPLES=OFF','-DFEATURE_assistant=OFF','-DFEATURE_designer=OFF','-DFEATURE_qdoc=OFF','-DFEATURE_linguist=ON','-DFEATURE_clang=OFF'])
 cmake(lt,'libtorrent',['-DBOOST_ROOT='+str(boost),'-DBoost_NO_BOOST_CMAKE=ON','-DBUILD_SHARED_LIBS=ON','-Dbuild_tests=OFF','-Dbuild_examples=OFF','-Dbuild_tools=OFF'])
 cmake(qb,'qbittorrent',['-DBOOST_ROOT='+str(boost),'-DBoost_NO_BOOST_CMAKE=ON','-DGUI=OFF','-DDBUS=OFF','-DSYSTEMD=OFF','-DSTACKTRACE=OFF','-DTESTING=OFF','-DCMAKE_INSTALL_RPATH=$ORIGIN/lib'])
 runtime.mkdir(exist_ok=True);(runtime/'lib').mkdir(exist_ok=True);binary=prefix/'bin/qbittorrent-nox';shutil.copy2(binary,runtime/'qbittorrent-nox')
 ldenv=dict(env,LD_LIBRARY_PATH=str(prefix/'lib'))
+plugin=prefix/'plugins/sqldrivers/libqsqlite.so'
 out=subprocess.check_output(['ldd',binary],env=ldenv,text=True)
+if plugin.exists():out+='\n'+subprocess.check_output(['ldd',plugin],env=ldenv,text=True)
 if 'not found' in out:sys.exit(out)
 glibc={'libc.so.6','libm.so.6','libpthread.so.0','libdl.so.2','librt.so.1','libresolv.so.2','libutil.so.1'}
 files=[]

@@ -357,11 +357,7 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 	automatic := input.Engine == "" || input.Engine == "auto"
 	if automatic {
-		if bt {
-			input.Engine = "qbittorrent"
-		} else {
-			input.Engine = h.autoEngine(r.Context(), len(input.Headers) > 0)
-		}
+		input.Engine = h.autoSourceEngine(r.Context(), input.URL, len(input.Headers) > 0)
 		if input.Engine == "" {
 			writeError(w, 503, "当前没有满足任务要求的可用下载引擎")
 			return

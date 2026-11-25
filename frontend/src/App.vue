@@ -532,8 +532,8 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
           <label><span>总下载限速（KB/s，0 不限速）</span><input v-model.number="qbOptions.download_kb" type="number" min="0" max="1073741824" required /></label>
           <label><span>总上传限速（KB/s，0 不限速）</span><input v-model.number="qbOptions.upload_kb" type="number" min="0" max="1073741824" required /></label>
           <label><span>最大连接数</span><input v-model.number="qbOptions.connections" type="number" min="1" max="2000" required /></label>
-          <label class="check-label"><input v-model="qbOptions.dht" type="checkbox" />启用 DHT 网络</label>
-          <label class="check-label"><input v-model="qbOptions.pex" type="checkbox" />启用 Peer Exchange</label>
+          <label class="check-setting"><input v-model="qbOptions.dht" type="checkbox" /><span>启用 DHT 网络</span></label>
+          <label class="check-setting"><input v-model="qbOptions.pex" type="checkbox" /><span>启用 Peer Exchange</span></label>
           <small>用于磁力和种子下载，下载期间会上传数据，完成后停止做种。配置与任务记录保存在本应用，设置不影响其他 qBittorrent。</small>
         </fieldset>
         <p v-else-if="qbSettingsError" class="error-box form-message" role="alert">{{ qbSettingsError }}</p>

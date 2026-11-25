@@ -1,6 +1,9 @@
 package app
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // Check availability on submission instead of relying on a stale browser snapshot.
 // Headers require Xunlei; falling back must not silently drop them.
@@ -14,4 +17,17 @@ func (h *Handler) autoEngine(ctx context.Context, needsHeaders bool) string {
 		}
 	}
 	return ""
+}
+
+func (h *Handler) autoSourceEngine(ctx context.Context, source string, needsHeaders bool) string {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(source)), "magnet:") {
+		if needsHeaders {
+			return ""
+		}
+		if e, ok := h.engines.Get("qbittorrent"); ok && e.Health(ctx) == nil {
+			return "qbittorrent"
+		}
+		return ""
+	}
+	return h.autoEngine(ctx, needsHeaders)
 }
