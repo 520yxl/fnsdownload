@@ -73,7 +73,7 @@ func TestPrivateRequestsAndOwnership(t *testing.T) {
 			if r.FormValue("stopped") != "true" {
 				t.Error("task autostarted")
 			}
-			fmt.Fprint(w, "Ok.")
+			w.WriteHeader(200)
 			return
 		}
 		_ = r.ParseForm()

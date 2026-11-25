@@ -115,7 +115,7 @@ func (e *Engine) request(c context.Context, path, kind string, b io.Reader, out 
 	if err != nil {
 		return err
 	}
-	if (path == "auth/login" || path == "torrents/add") && strings.TrimSpace(string(v)) != "Ok." {
+	if (path == "auth/login" || path == "torrents/add") && strings.TrimSpace(string(v)) != "Ok." && strings.TrimSpace(string(v)) != "" {
 		return errors.New("qBittorrent 拒绝了请求")
 	}
 	return nil
