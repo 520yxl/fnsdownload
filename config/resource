@@ -1,7 +1,13 @@
 {
   "data-share": {
     "shares": [
-      { "name": "fnsdownload/downloads" }
+      {
+        "name": "fnsdownload/downloads"
+      }
     ]
-  }
+  },
+  "api-scope": [
+    "trim.file.userAccess",
+    "trim.file.userAcl"
+  ]
 }

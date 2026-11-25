@@ -1,0 +1,6 @@
+cmd/* text eol=lf
+scripts/*.sh text eol=lf
+manifest text eol=lf
+wizard/* text eol=lf
+frontend/index.html text eol=lf
+internal/app/web/index.html text eol=lf

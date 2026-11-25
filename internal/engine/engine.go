@@ -7,40 +7,53 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("engine task not found")
+	ErrNotFound    = errors.New("engine task not found")
 	ErrUnsupported = errors.New("operation unsupported by engine")
 )
 
 type TaskStatus string
 
 const (
-	StatusQueued TaskStatus = "queued"
-	StatusRunning TaskStatus = "running"
-	StatusPaused TaskStatus = "paused"
+	StatusQueued    TaskStatus = "queued"
+	StatusRunning   TaskStatus = "running"
+	StatusPaused    TaskStatus = "paused"
 	StatusCompleted TaskStatus = "completed"
-	StatusFailed TaskStatus = "failed"
-	StatusRemoved TaskStatus = "removed"
+	StatusFailed    TaskStatus = "failed"
+	StatusRemoved   TaskStatus = "removed"
 )
 
 type Task struct {
-	ID string `json:"id"`
-	Engine string `json:"engine"`
-	Source string `json:"source"`
-	Name string `json:"name"`
-	Directory string `json:"directory"`
-	Status TaskStatus `json:"status"`
-	TotalBytes int64 `json:"total_bytes"`
-	CompletedBytes int64 `json:"completed_bytes"`
-	SpeedBytes int64 `json:"speed_bytes"`
-	Error string `json:"error,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	RetiredNativeIDs []string `json:"retired_native_ids,omitempty"`
+	NativeID         string   `json:"native_id,omitempty"`
+	AutoEngine       bool     `json:"auto_engine,omitempty"`
+	HeadersRequired  bool     `json:"headers_required,omitempty"`
+	TriedEngines     []string `json:"tried_engines,omitempty"`
+	FallbackRoot     string   `json:"fallback_root,omitempty"`
+	EngineNote       string   `json:"engine_note,omitempty"`
+
+	ElapsedMS      int64      `json:"elapsed_ms"`
+	Retryable      bool       `json:"retryable,omitempty"`
+	RetryCount     int        `json:"retry_count,omitempty"`
+	RetryAt        *time.Time `json:"retry_at,omitempty"`
+	ID             string     `json:"id"`
+	Engine         string     `json:"engine"`
+	Source         string     `json:"source"`
+	Name           string     `json:"name"`
+	Directory      string     `json:"directory"`
+	Status         TaskStatus `json:"status"`
+	TotalBytes     int64      `json:"total_bytes"`
+	CompletedBytes int64      `json:"completed_bytes"`
+	SpeedBytes     int64      `json:"speed_bytes"`
+	Error          string     `json:"error,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 type CreateRequest struct {
-	URL string `json:"url"`
+	Torrent   []byte `json:"-"`
+	URL       string `json:"url"`
 	Directory string `json:"directory"`
-	Name string `json:"name,omitempty"`
+	Name      string `json:"name,omitempty"`
 }
 
 type Engine interface {

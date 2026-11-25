@@ -1,6 +1,6 @@
 # Thunder_auth 接入
 
-固定产品：moxyi-download；认证：HMAC-SHA256；Token：shared；Scopes：xtask.p2sp + xindex.query。
+固定产品：fnsdownload；认证：HMAC-SHA256；Token：shared；Scopes：xtask.p2sp + xindex.query。
 
 签名规范必须与 520yxl/Thunder_auth/docs/API.md 一致：
 ```

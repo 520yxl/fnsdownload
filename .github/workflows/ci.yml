@@ -5,9 +5,14 @@ on:
   pull_request:
     branches: [develop, main]
   workflow_dispatch:
+    inputs:
+      bundle_product_secret:
+        description: Build a private FPK with the configured product credential
+        type: boolean
+        default: false
 jobs:
   test-and-package:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -16,20 +21,50 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install baseline CPU test emulator
+        run: sudo apt-get update -qq && sudo apt-get install -y qemu-user aria2 gcc-12 g++-12 cmake ninja-build pkg-config libssl-dev zlib1g-dev libsqlite3-dev patch
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache/qb-build
+            .cache/qbittorrent-runtime
+          key: native-qb-amd64-${{ hashFiles('scripts/qbittorrent-sources.json', 'scripts/build-qbittorrent.py') }}
       - name: Resolve Go modules
         run: go mod tidy
-      - name: Build Vue 3 frontend
-        working-directory: frontend
-        run: |
-          npm install --no-audit --no-fund
-          npm run build
+      - name: Verify startup diagnostics
+        run: python3 scripts/test-startup.py
       - name: Install fnpack
         run: |
           curl -fL --retry 3 https://static2.fnnas.com/fnpack/fnpack-1.3.3-linux-amd64 -o /usr/local/bin/fnpack
           chmod +x /usr/local/bin/fnpack
           fnpack --help
+      - name: Build isolated qBittorrent runtime
+        id: qb-build
+        run: python3 scripts/build-qbittorrent.py
+      - uses: actions/cache/save@v4
+        if: steps.qb-build.outcome == 'success'
+        with:
+          path: |
+            .cache/qb-build
+            .cache/qbittorrent-runtime
+          key: native-qb-amd64-${{ hashFiles('scripts/qbittorrent-sources.json', 'scripts/build-qbittorrent.py') }}
       - name: Build native x86_64 FPK payload
-        run: bash ./scripts/build-fpk.sh
+        env:
+          XUNLEI_SDK_ROOT: ${{ github.workspace }}/third_party/xunlei
+          BUNDLE_PRODUCT_SECRET: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_product_secret || false }}
+          THUNDER_AUTH_PRODUCT_SECRET: ${{ github.event_name == 'workflow_dispatch' && inputs.bundle_product_secret && secrets.THUNDER_AUTH_PRODUCT_SECRET || '' }}
+        run: |
+          if [[ "$BUNDLE_PRODUCT_SECRET" == "true" ]]; then
+            [[ -n "$THUNDER_AUTH_PRODUCT_SECRET" ]] || { echo 'Product credential is not configured'; exit 1; }
+            umask 077
+            export XUNLEI_PRODUCT_SECRET_FILE="$RUNNER_TEMP/thunder-auth.secret"
+            printf '%s' "$THUNDER_AUTH_PRODUCT_SECRET" > "$XUNLEI_PRODUCT_SECRET_FILE"
+          fi
+          python3 ./scripts/fetch-xunlei-sdk.py
+          bash ./scripts/build-fpk.sh
       - name: Inspect FPK and payload
         run: |
           file dist/fnsdownload-x86_64.fpk
@@ -37,11 +72,12 @@ jobs:
           cat dist/app-files.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: fnsdownload-x86_64-${{ github.sha }}
+          name: fnsdownload-x86_64-${{ inputs.bundle_product_secret && 'private-' || '' }}${{ github.sha }}
+          retention-days: 1
           path: |
             dist/fnsdownload-x86_64.fpk
             dist/build-info.txt
             dist/fpk-files.txt
             dist/app-files.txt
+            dist/SHA256SUMS.txt
           if-no-files-found: error
-          retention-days: 14
