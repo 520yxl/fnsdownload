@@ -96,6 +96,7 @@ func (e *Engine) startProcess(c context.Context) (*managedProcess, error) {
 	defer deadline.Stop()
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
+	var lastProbe error
 	for {
 		select {
 		case <-c.Done():
@@ -103,7 +104,7 @@ func (e *Engine) startProcess(c context.Context) (*managedProcess, error) {
 		case <-p.done:
 			err = errors.New("qBittorrent 启动时退出")
 		case <-deadline.C:
-			err = errors.New("qBittorrent 独立实例启动超时")
+			err = fmt.Errorf("qBittorrent 独立实例启动超时：%v", lastProbe)
 		case <-tick.C:
 			err = e.form(c, "auth/login", url.Values{"username": {"moxyi"}, "password": {e.password}}, nil)
 			if err == nil {
@@ -113,6 +114,7 @@ func (e *Engine) startProcess(c context.Context) (*managedProcess, error) {
 					return p, nil
 				}
 			}
+			lastProbe = err
 			continue
 		}
 		_ = command.Process.Kill()
