@@ -26,7 +26,10 @@ func bindTask(raw, saved engine.Task) engine.Task {
 	raw.HeadersRequired = saved.HeadersRequired
 	raw.TriedEngines = saved.TriedEngines
 	raw.FallbackRoot = saved.FallbackRoot
-	raw.EngineNote = saved.EngineNote
+	// qB reports live BT stages; a persisted snapshot must not hide them.
+	if raw.Engine != "qbittorrent" || raw.EngineNote == "" {
+		raw.EngineNote = saved.EngineNote
+	}
 	raw.RetiredNativeIDs = saved.RetiredNativeIDs
 	return raw
 }
@@ -186,3 +189,4 @@ func (h *Handler) fallbackTask(ctx context.Context, task engine.Task) (engine.Ta
 	}
 	return task, false
 }
+

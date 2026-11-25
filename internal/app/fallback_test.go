@@ -17,6 +17,19 @@ import (
 	"github.com/520yxl/fnsdownload/internal/store"
 )
 
+func TestBTBindingPreservesLiveStage(t *testing.T) {
+	saved := engine.Task{ID: "stable", Engine: "qbittorrent", EngineNote: "旧状态"}
+	live := engine.Task{ID: "native", Engine: "qbittorrent", EngineNote: "正在获取种子元数据"}
+	got := bindTask(live, saved)
+	if got.ID != saved.ID || got.EngineNote != live.EngineNote {
+		t.Fatal("live BT diagnostic overwritten", got)
+	}
+	live.EngineNote = ""
+	if bindTask(live, saved).EngineNote != saved.EngineNote {
+		t.Fatal("persisted diagnostic lost")
+	}
+}
+
 type fallbackTestEngine struct {
 	*queueTestEngine
 	creates             int
@@ -300,3 +313,4 @@ func TestAutomaticFallbackCompletesRealHTTPDownload(t *testing.T) {
 		t.Fatalf("fallback split history: %#v", records)
 	}
 }
+

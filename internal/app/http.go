@@ -204,7 +204,7 @@ func (h *Handler) routes() {
 	h.qbRoutes()
 	h.xunleiRoutes()
 	h.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.28", "runtime": "go", "database": "sqlite"})
+		writeJSON(w, 200, map[string]any{"ok": true, "service": "fnsdownload", "version": "0.5.29", "runtime": "go", "database": "sqlite"})
 	})
 	h.mux.HandleFunc("GET /api/system", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"download_dir": filepath.Clean(h.cfg.DownloadDir), "data_dir": filepath.Clean(h.cfg.DataDir), "database": "sqlite"})
@@ -312,6 +312,7 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
 	var input struct {
 		Torrent        []byte            `json:"torrent,omitempty"`
+		TorrentPath    string            `json:"torrent_path,omitempty"`
 		AllowDuplicate bool              `json:"allow_duplicate"`
 		Engine         string            `json:"engine"`
 		URL            string            `json:"url"`
@@ -321,6 +322,22 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		writeError(w, 400, "invalid JSON body")
+		return
+	}
+	if input.TorrentPath != "" {
+		if len(input.Torrent) > 0 || strings.TrimSpace(input.URL) != "" {
+			writeError(w, 400, "请分别提交链接、本地种子或 NAS 种子文件")
+			return
+		}
+		data, err := readNASTorrent(r.Context(), r.Header.Get("X-Trim-Userid"), input.TorrentPath)
+		if err != nil {
+			writeError(w, 400, err.Error())
+			return
+		}
+		input.Torrent = data
+	}
+	if len(input.Torrent) > 8<<20 {
+		writeError(w, 400, "种子文件最大 8 MB")
 		return
 	}
 	if len(input.Torrent) > 0 {
@@ -596,3 +613,4 @@ func canonicalDownloadURL(raw string) string {
 	}
 	return u.String()
 }
+

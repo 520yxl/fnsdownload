@@ -361,6 +361,16 @@ type torrent struct {
 	Speed             int64   `json:"dlspeed"`
 	Progress          float64 `json:"progress"`
 	SavePath          string  `json:"save_path"`
+	Seeds             int     `json:"num_seeds"`
+	Peers             int     `json:"num_leechs"`
+}
+
+func torrentStatusNote(v torrent) string {
+	stage := map[string]string{"metaDL": "正在获取种子元数据", "forcedMetaDL": "正在获取种子元数据", "stalledDL": "等待可用连接", "downloading": "正在下载", "forcedDL": "正在下载", "queuedDL": "等待引擎调度", "checkingDL": "正在校验文件", "checkingResumeData": "正在检查断点数据", "checkingUP": "正在校验文件", "queuedForChecking": "等待文件校验", "moving": "正在移动文件", "stoppedDL": "已暂停", "stoppedUP": "已停止做种", "error": "引擎错误", "missingFiles": "文件缺失"}[v.State]
+	if stage == "" {
+		stage = "BT 状态待确认"
+	}
+	return fmt.Sprintf("%s · 已连接做种者 %d / 下载者 %d", stage, v.Seeds, v.Peers)
 }
 
 func (e *Engine) get(c context.Context, id string) (engine.Task, error) {
@@ -396,10 +406,14 @@ func (e *Engine) get(c context.Context, id string) (engine.Task, error) {
 	t.CompletedBytes = v.Downloaded
 	t.SpeedBytes = v.Speed
 	t.Error = ""
+	t.EngineNote = torrentStatusNote(v)
 	switch {
-	case v.State == "error" || v.State == "missingFiles":
+	case v.State == "missingFiles":
 		t.Status = engine.StatusFailed
-		t.Error = "BT 下载失败，请检查保存目录、权限和磁盘空间"
+		t.Error = "BT 文件缺失（missingFiles），请检查下载目录是否被移动、删除或存储卷离线"
+	case v.State == "error":
+		t.Status = engine.StatusFailed
+		t.Error = "BT 引擎报告错误（error），请检查保存目录权限、磁盘空间和 qBittorrent 日志"
 	case strings.HasPrefix(v.State, "checking") || v.State == "queuedForChecking" || v.State == "moving":
 		t.Status = engine.StatusRunning
 	case v.Progress >= 1 && !strings.Contains(strings.ToLower(v.State), "meta"):
@@ -450,3 +464,4 @@ func (e *Engine) Close() error {
 	}
 	return nil
 }
+

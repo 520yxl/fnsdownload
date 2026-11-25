@@ -4,7 +4,7 @@
 
 ## 功能与使用
 
-新建下载支持磁力链接（批量每行一条）及单个本地 `.torrent` 文件（最大 8 MB）。保存目录继续调用飞牛目录选择器。自动模式将磁力/种子交给 qBittorrent，普通 HTTP(S) 交给既有引擎。高级设置可以指定引擎；协议不兼容时拒绝创建，BT 不参与 HTTP 引擎故障切换。
+新建下载支持磁力链接（批量每行一条）及单个 `.torrent` 文件（最大 8 MB），种子来源可选 NAS 文件或本地上传。NAS 文件通过飞牛文件选择器授权，后端检查应用授权路径和当前用户读取权限。保存目录继续调用飞牛目录选择器。自动模式将磁力/种子交给 qBittorrent，普通 HTTP(S) 交给既有引擎。高级设置可以指定引擎；协议不兼容时拒绝创建，BT 不参与 HTTP 引擎故障切换。
 
 每条磁力链接是独立任务；多文件种子在本版本作为一个任务下载全部文件。每个种子使用独立 `MoxYi-qB-*` 目录。同一信息哈希在本实例只允许一个任务，重复时应继续已有任务。支持统一队列、进度、速度、耗时、暂停、继续、移除记录及明确选择后的文件删除。任务与配置跟随应用保存；关闭浏览器不影响后台任务。
 
@@ -24,3 +24,8 @@ Go 测试覆盖协议选择、哈希识别、设置持久化、接口权限及�
 
 官方接口：https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-5.0)
 官方源码：https://github.com/qbittorrent/qBittorrent
+
+## BT 排障信息
+
+任务列表和详情展示元数据获取、等待连接、校验阶段和已连接 Peer 数。等待元数据或连接不会被误标为失败。原生 `error`、`missingFiles` 和任务记录缺失分别显示对应提示；这些状态提示不能替代实际日志原因。qBittorrent 自身日志在 `TRIM_PKGVAR/data/qbittorrent/qBittorrent/data/logs/qbittorrent.log`。
+

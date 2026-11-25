@@ -9,7 +9,8 @@ if (new URLSearchParams(location.search).has('directory-callback')) {
     window.opener.postMessage({ type: 'fnsdownload:directory', result }, location.origin)
     window.close()
   }
-  document.getElementById('app')!.textContent = '目录授权已结束，请返回下载器。'
+  document.getElementById('app')!.textContent = '文件授权已结束，请返回下载器。'
 } else {
   createApp(App).mount('#app')
 }
+

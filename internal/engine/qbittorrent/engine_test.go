@@ -117,6 +117,20 @@ func TestPrivateRequestsAndOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	state = "error"
+	failed, err := e.Get(ctx, task.ID)
+	if err != nil || failed.Status != engine.StatusFailed || !strings.Contains(failed.Error, "error") {
+		t.Fatal("native error not exposed", failed, err)
+	}
+	state = "missingFiles"
+	failed, err = e.Get(ctx, task.ID)
+	if err != nil || !strings.Contains(failed.Error, "missingFiles") {
+		t.Fatal("missing files not distinguished", failed, err)
+	}
+	state = "metaDL"
+	live, err = e.Get(ctx, task.ID)
+	if err != nil || live.Status != engine.StatusRunning || live.Error != "" || !strings.Contains(live.EngineNote, "元数据") {
+		t.Fatal("metadata wait treated as failure", live, err)
+	}
 	if err = e.Start(ctx, task.ID); err != nil {
 		t.Fatal("recoverable native task cannot retry", err)
 	}
@@ -218,3 +232,4 @@ func TestParkResumeFlagsWithoutChangingPayload(t *testing.T) {
 		t.Fatal("ambiguous resume accepted")
 	}
 }
+

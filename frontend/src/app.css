@@ -41,3 +41,6 @@
 .create-modal .create-form{grid-template-columns:minmax(0,1fr);gap:18px}.create-advanced{border-top:1px solid var(--border-soft);min-width:0}.advanced-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;padding:16px 0 0;border:0;background:transparent;color:var(--secondary);font:inherit;font-size:12px;text-align:left}.advanced-toggle svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;transition:transform .15s}.advanced-toggle svg.expanded{transform:rotate(180deg)}.advanced-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:3px}.advanced-options{display:grid;gap:20px;padding-top:20px}.advanced-options .directory-field>span{font-size:12px}.advanced-hint{margin:0;color:var(--muted);font-size:11px;line-height:1.7}.create-modal .url-field textarea{min-height:112px}
 
 .task-meta{flex-wrap:wrap;row-gap:5px;font-variant-numeric:tabular-nums}
+
+.torrent-source{display:grid;gap:10px}.torrent-actions{display:flex;gap:8px;flex-wrap:wrap}.torrent-source small{overflow-wrap:anywhere}
+

@@ -57,13 +57,40 @@ const search = ref('')
 const url = ref('')
 const selectedEngine = ref('auto')
 const torrentFile = ref<File | null>(null)
+const torrentPath = ref('')
+const pickingTorrent = ref(false)
+const hasTorrent = computed(() => !!torrentFile.value || !!torrentPath.value)
+let torrentAuthState = ''
+const torrentName = computed(() => torrentFile.value?.name || torrentPath.value.split('/').pop() || '')
+function clearTorrent() { torrentFile.value=null; torrentPath.value=''; if(torrentInput.value) torrentInput.value.value='' }
+function localTorrentChanged(event: Event) { torrentPath.value=''; torrentFile.value=(event.target as HTMLInputElement).files?.[0] || null }
+async function chooseNASTorrent() {
+  if (pickingTorrent.value || submitting.value) return
+  pickingTorrent.value=true; createError.value=''
+  try {
+    await fnos.ready()
+    if (fnos.isStandaloneWeb) {
+      if (['localhost','127.0.0.1'].includes(location.hostname)) throw new Error('请在飞牛桌面中选择 NAS 种子文件。')
+      torrentAuthState=crypto.randomUUID()
+      await fnos.openAppAuth('pickUserFile',{appName:'fnsdownload',directory:false,accept:['.torrent'],state:torrentAuthState,redirectUri:base+'/?directory-callback=1',sidebarGroup:['myFiles','otherShare','favorites']},{target:'_blank',features:'width=750,height=630'})
+    } else {
+      createDialog.value?.close()
+      try {
+        const result=await fnos.pickUserFile({directory:false,accept:['.torrent'],title:'选择 NAS 种子文件',okText:'使用此种子',sidebarGroup:['myFiles','otherShare','favorites']})
+        if(result && result.code!==0) throw new Error(result.msg || '选择种子失败')
+        if(result?.data?.length) {clearTorrent();torrentPath.value=result.data[0]}
+      } finally {createDialog.value?.showModal()}
+    }
+  } catch(e) {createError.value=e instanceof Error?e.message:'无法打开飞牛文件选择器'}
+  finally {pickingTorrent.value=false}
+}
 const torrentInput=ref<HTMLInputElement|null>(null)
 const qbOptions=ref({download_kb:0,upload_kb:0,connections:200,dht:true,pex:true})
 const qbSettingsLoaded=ref(false)
 const qbSettingsError=ref('')
 const engineChoices = [{name:'qbittorrent',label:'qBittorrent（BT / 磁力）'},{name:'xunlei',label:'迅雷'}, {name:'aria2',label:'aria2'}, {name:'http',label:'HTTP / HTTPS'}]
 const canCreate=computed(()=>{
- const names=torrentFile.value?['qbittorrent']:url.value.split(/\r?\n/).map(v=>v.trim()).filter(Boolean).map(v=>v.toLowerCase().startsWith('magnet:')?'qbittorrent':'http')
+ const names=hasTorrent.value?['qbittorrent']:url.value.split(/\r?\n/).map(v=>v.trim()).filter(Boolean).map(v=>v.toLowerCase().startsWith('magnet:')?'qbittorrent':'http')
  return names.length>0&&names.every(kind=>{const choices=selectedEngine.value==='auto'?(kind==='qbittorrent'?['qbittorrent']:['xunlei','aria2','http']):[selectedEngine.value];return choices.some(name=>(kind==='qbittorrent')===(name==='qbittorrent')&&engines.value.some(e=>e.name===name&&e.ready))})
 })
 const supportsHeaders = computed(() => (selectedEngine.value === 'auto' || selectedEngine.value === 'xunlei') && engines.value.some(e => e.name === 'xunlei' && e.ready))
@@ -92,6 +119,12 @@ const directoryError = ref('')
 const fnos = new TrimApp()
 let directoryAuthState = ''
 function acceptDirectoryResult(result: AppAuthResult) {
+  if(result && torrentAuthState && result.state===torrentAuthState && result.appName==='fnsdownload' && result.method==='pickUserFile') {
+    torrentAuthState=''
+    if(result.status==='success' && result.path?.length) {clearTorrent();torrentPath.value=result.path[0]}
+    else if(result.status==='error') createError.value='种子文件授权失败，请重试。'
+    return
+  }
   if (!result || !directoryAuthState || result.state !== directoryAuthState || result.appName !== 'fnsdownload' || result.method !== 'pickUserFile') return
   directoryAuthState = ''
   if (result.status === 'success' && result.path?.length) { if (settingsPicking.value) settingsDraft.value.directory = result.path[0]; else directory.value = result.path[0] }
@@ -170,8 +203,7 @@ function notify(message: string) {
 function openCreate() {
   createAdvanced.value = false
   selectedEngine.value = 'auto'
-  torrentFile.value = null
-  if(torrentInput.value) torrentInput.value.value=''
+  clearTorrent()
   directoryError.value = ''
   createError.value = ''
   requestHeaders.value = ''
@@ -331,8 +363,9 @@ function canonicalURL(value: string) {
  try { const parsed = new URL(value); if(parsed.protocol==='magnet:'){const xt=parsed.searchParams.getAll('xt');for(const key of xt){const h=key.match(/^urn:btih:([a-f0-9]{40})$/i);if(h)return 'magnet:'+h[1].toLowerCase()};for(const key of xt){const h=key.match(/^urn:btmh:1220([a-f0-9]{64})$/i);if(h)return 'magnet:'+h[1].slice(0,40).toLowerCase()}} parsed.hash=''; return parsed.href } catch { return value.trim() }
 }
 async function addTask(duplicates: 'ask' | 'skip' | 'allow' = 'ask') {
-  if (submitting.value || (!url.value.trim() && !torrentFile.value)) return
+  if (submitting.value || (!url.value.trim() && !hasTorrent.value)) return
   if (selectedEngine.value!=='auto' && !engines.value.some(e => e.name === selectedEngine.value && e.ready)) { createError.value = '所选下载引擎当前不可用，请选择其他引擎。'; createAdvanced.value = true; return }
+  if(hasTorrent.value && url.value.trim()){createError.value='请分别提交链接和种子文件。';return}
   let torrentData = ''
   if(torrentFile.value){
     if(url.value.trim()){createError.value='请分别提交链接和种子文件。';return}
@@ -383,12 +416,12 @@ async function addTask(duplicates: 'ask' | 'skip' | 'allow' = 'ask') {
   let startFailed = 0
   let firstError = ''
   try {
-    if(torrentData) links.push('')
+    if(hasTorrent.value) links.push('')
     // Each URL goes through the ordinary task endpoint and owns its own task ID.
     // Submit in input order so creation timestamps also preserve batch ordering.
     for (const link of links) {
       try {
-        await api('/api/tasks', { method: 'POST', body: JSON.stringify({ engine: selectedEngine.value, url: link, torrent:torrentData || undefined, directory: directory.value.trim(), headers, allow_duplicate: duplicates === 'allow' }) })
+        await api('/api/tasks', { method: 'POST', body: JSON.stringify({ engine: selectedEngine.value, url: link, torrent:torrentData || undefined, torrent_path:torrentPath.value || undefined, directory: directory.value.trim(), headers, allow_duplicate: duplicates === 'allow' }) })
         created++
       } catch (e) {
         if (e instanceof Error && 'taskCreated' in e && e.taskCreated) { created++; startFailed++ }
@@ -574,8 +607,8 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
     <div class="modal-header"><div><span class="modal-eyebrow">NEW DOWNLOAD</span><h2 id="create-title">新建下载</h2><p>添加链接，其余交给下载器。</p></div><button class="close-button" @click="createDialog?.close()" :disabled="submitting" aria-label="关闭新建下载">×</button></div>
     <form @submit.prevent="addTask()" :aria-busy="submitting">
       <div class="modal-body create-form">
-        <label class="url-field"><span>下载链接</span><textarea id="download-url" v-model="url" placeholder="粘贴 HTTP / HTTPS 或磁力链接" :required="!torrentFile" autofocus :disabled="submitting" rows="3"></textarea><small>支持批量下载，每行一个链接。</small></label>
-        <label><span>或导入种子文件</span><input ref="torrentInput" type="file" accept=".torrent,application/x-bittorrent" :disabled="submitting" @change="torrentFile=($event.target as HTMLInputElement).files?.[0] || null" /><small v-if="torrentFile">{{ torrentFile.name }} · 最多 8 MB</small></label>
+        <label class="url-field"><span>下载链接</span><textarea id="download-url" v-model="url" placeholder="粘贴 HTTP / HTTPS 或磁力链接" :required="!hasTorrent" autofocus :disabled="submitting" rows="3"></textarea><small>支持批量下载，每行一个链接。</small></label>
+        <div class="torrent-source"><span>或导入种子文件</span><div class="torrent-actions"><button type="button" :disabled="submitting || pickingTorrent" @click="chooseNASTorrent">{{ pickingTorrent ? '选择中…' : 'NAS 文件' }}</button><button type="button" :disabled="submitting" @click="torrentInput?.click()">本地上传</button><button v-if="hasTorrent" type="button" :disabled="submitting" @click="clearTorrent">清除</button></div><input ref="torrentInput" hidden type="file" accept=".torrent,application/x-bittorrent" :disabled="submitting" @change="localTorrentChanged" /><small>{{ hasTorrent ? torrentName + (torrentPath ? ' · NAS 文件' : ' · 本地文件') : '支持 .torrent 文件，最大 8 MB' }}</small></div>
         <div class="directory-field"><span>保存目录</span><div class="directory-controls"><input aria-label="保存目录" :value="directory || '默认下载目录'" readonly /><button type="button" class="secondary-button" @click="chooseDirectory()" :disabled="submitting || pickingDirectory">{{ pickingDirectory ? '正在打开…' : '选择目录' }}</button><button v-if="directory" type="button" class="secondary-button" @click="directory=''" :disabled="submitting">重置</button></div><small>通过飞牛选择并授权 NAS 目录，未选择时使用默认目录。</small><p v-if="directoryError" role="alert" class="error-banner">{{ directoryError }}</p></div>
         <div class="create-advanced">
           <button type="button" class="advanced-toggle" :aria-expanded="createAdvanced" aria-controls="create-advanced-options" @click="createAdvanced=!createAdvanced"><span>高级设置</span><svg viewBox="0 0 24 24" :class="{expanded:createAdvanced}" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg></button>
@@ -625,3 +658,4 @@ onUnmounted(() => { disposed = true; window.clearTimeout(timer); document.remove
   <div v-if="notification" class="toast" role="status"><span>✓</span>{{ notification }}</div>
   </div>
 </template>
+
