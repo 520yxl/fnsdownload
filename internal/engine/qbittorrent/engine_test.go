@@ -116,10 +116,14 @@ func TestPrivateRequestsAndOwnership(t *testing.T) {
 	if err = e.Pause(ctx, task.ID); err != nil {
 		t.Fatal(err)
 	}
+	state = "error"
+	if err = e.Start(ctx, task.ID); err != nil {
+		t.Fatal("recoverable native task cannot retry", err)
+	}
 	if err = e.Delete(ctx, task.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if len(actions) != 3 {
+	if len(actions) != 4 {
 		t.Fatal(actions)
 	}
 	if _, err = os.Stat(dir); err != nil {

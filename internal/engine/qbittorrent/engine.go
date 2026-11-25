@@ -19,6 +19,8 @@ import (
 	"time"
 )
 
+const missingTaskMessage = "qBittorrent 中的任务记录不存在，请重新导入种子"
+
 type Config struct{ Binary, StateDir string }
 type Options struct {
 	DownloadKB  int  `json:"download_kb"`
@@ -315,7 +317,7 @@ func (e *Engine) Start(c context.Context, id string) error {
 	if e.tasks[id].Status == engine.StatusCompleted {
 		return nil
 	}
-	if e.tasks[id].Status == engine.StatusFailed {
+	if e.tasks[id].Status == engine.StatusFailed && e.tasks[id].Error == missingTaskMessage {
 		return errors.New(e.tasks[id].Error)
 	}
 	return e.action(c, id, "start")
@@ -379,7 +381,7 @@ func (e *Engine) get(c context.Context, id string) (engine.Task, error) {
 	if len(rows) == 0 {
 		t.Status = engine.StatusFailed
 		t.SpeedBytes = 0
-		t.Error = "qBittorrent 中的任务记录不存在，请重新导入种子"
+		t.Error = missingTaskMessage
 		e.tasks[id] = t
 		return t, nil
 	}
