@@ -218,7 +218,7 @@ func (e *Engine) Create(c context.Context, r engine.CreateRequest) (engine.Task,
 	if len(r.Torrent) > 0 {
 		f, _ := w.CreateFormFile("torrents", "download.torrent")
 		_, _ = f.Write(r.Torrent)
-		source = "magnet:?xt=urn:btih:" + hash
+		source, _ = TorrentMagnet(r.Torrent)
 	} else {
 		_ = w.WriteField("urls", r.URL)
 	}
@@ -271,7 +271,16 @@ func (e *Engine) RestoreTask(t engine.Task) engine.Task {
 	e.tasks[t.ID] = t
 	return t
 }
+func ownedHash(id string) (string, error) {
+	if !strings.HasPrefix(id, "qb-") || !validHash(strings.TrimPrefix(id, "qb-"), 40) {
+		return "", engine.ErrNotFound
+	}
+	return strings.TrimPrefix(id, "qb-"), nil
+}
 func (e *Engine) action(c context.Context, id, action string) error {
+	if _, err := ownedHash(id); err != nil {
+		return err
+	}
 	if _, ok := e.tasks[id]; !ok {
 		return engine.ErrNotFound
 	}
@@ -308,6 +317,9 @@ func (e *Engine) Pause(c context.Context, id string) error {
 	return err
 }
 func (e *Engine) Delete(c context.Context, id string, files bool) error {
+	if _, err := ownedHash(id); err != nil {
+		return err
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if _, ok := e.tasks[id]; !ok {
@@ -333,6 +345,9 @@ type torrent struct {
 }
 
 func (e *Engine) get(c context.Context, id string) (engine.Task, error) {
+	if _, err := ownedHash(id); err != nil {
+		return engine.Task{}, err
+	}
 	t, ok := e.tasks[id]
 	if !ok {
 		return t, engine.ErrNotFound
@@ -366,6 +381,8 @@ func (e *Engine) get(c context.Context, id string) (engine.Task, error) {
 	case v.State == "error" || v.State == "missingFiles":
 		t.Status = engine.StatusFailed
 		t.Error = "BT 下载失败，请检查保存目录、权限和磁盘空间"
+	case strings.HasPrefix(v.State, "checking") || v.State == "queuedForChecking" || v.State == "moving":
+		t.Status = engine.StatusRunning
 	case v.Progress >= 1 && !strings.Contains(strings.ToLower(v.State), "meta"):
 		t.Status = engine.StatusCompleted
 		t.SpeedBytes = 0

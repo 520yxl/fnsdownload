@@ -52,9 +52,11 @@ func validHash(h string, n int) bool {
 }
 
 // Hash the exact original info bytes; re-encoding changes the torrent identity.
-func TorrentHash(data []byte) (string, error) {
+func TorrentHash(data []byte) (string, error)   { h, _, err := torrentIdentity(data); return h, err }
+func TorrentMagnet(data []byte) (string, error) { _, m, err := torrentIdentity(data); return m, err }
+func torrentIdentity(data []byte) (string, string, error) {
 	if len(data) == 0 || len(data) > 8<<20 || data[0] != 'd' {
-		return "", errors.New("无效的种子文件（最大 8 MB）")
+		return "", "", errors.New("无效的种子文件（最大 8 MB）")
 	}
 	p := 1
 	var info []byte
@@ -62,31 +64,31 @@ func TorrentHash(data []byte) (string, error) {
 	for p < len(data) && data[p] != 'e' {
 		key, end, err := bstring(data, p)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		p = end
 		start := p
 		p, err = bskip(data, p, 0)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		if string(key) == "info" {
 			if info != nil || data[start] != 'd' {
-				return "", errors.New("无效的种子 info 字典")
+				return "", "", errors.New("无效的种子 info 字典")
 			}
 			info = data[start:p]
 			v2 = infoV2(info)
 		}
 	}
 	if p != len(data)-1 || data[p] != 'e' || len(info) == 0 {
-		return "", errors.New("无效的种子字典")
+		return "", "", errors.New("无效的种子字典")
 	}
 	if v2 {
 		sum := sha256.Sum256(info)
-		return hex.EncodeToString(sum[:20]), nil
+		return hex.EncodeToString(sum[:20]), "magnet:?xt=urn:btmh:1220" + hex.EncodeToString(sum[:]), nil
 	}
 	sum := sha1.Sum(info)
-	return hex.EncodeToString(sum[:]), nil
+	return hex.EncodeToString(sum[:]), "magnet:?xt=urn:btih:" + hex.EncodeToString(sum[:]), nil
 }
 func infoV2(b []byte) bool {
 	p := 1

@@ -97,6 +97,16 @@ func TestManagedIsolationAndTorrentDownload(t *testing.T) {
 	if err != nil || !bytes.Equal(got, payload) {
 		t.Fatal("download integrity", err)
 	}
+	stalled, err := a.Create(ctx, engine.CreateRequest{URL: "magnet:?xt=urn:btih:" + strings.Repeat("cd", 20), Directory: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.Start(ctx, stalled.ID); err != nil {
+		t.Fatal("metadata start:", err)
+	}
+	if err = a.Pause(ctx, stalled.ID); err != nil {
+		t.Fatal("metadata pause:", err)
+	}
 	if err = a.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -106,6 +116,7 @@ func TestManagedIsolationAndTorrentDownload(t *testing.T) {
 	reopened := NewManaged(a.cfg)
 	defer reopened.Close()
 	reopened.RestoreTask(live)
+	reopened.RestoreTask(stalled)
 	if err = reopened.Health(ctx); err != nil {
 		t.Fatal("restart:", err)
 	}
@@ -113,11 +124,52 @@ func TestManagedIsolationAndTorrentDownload(t *testing.T) {
 	if err != nil || restored.CompletedBytes != int64(len(payload)) {
 		t.Fatal("resume record lost", restored, err)
 	}
+	paused, err := reopened.Get(ctx, stalled.ID)
+	if err != nil || paused.Status != engine.StatusPaused {
+		t.Fatal("unfinished torrent did not restore paused", paused, err)
+	}
 	if err = reopened.Delete(ctx, task.ID, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = os.Stat(filepath.Join(task.Directory, "payload.bin")); err != nil {
 		t.Fatal("delete record removed file")
+	}
+	again, err := reopened.Create(ctx, engine.CreateRequest{Torrent: data, Directory: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = reopened.Start(ctx, again.ID); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		r, e := reopened.Get(ctx, again.ID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if r.Status == engine.StatusCompleted {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if _, err = os.Stat(filepath.Join(again.Directory, "payload.bin")); err != nil {
+		t.Fatal(err)
+	}
+	if err = reopened.Delete(ctx, again.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err = os.Stat(filepath.Join(again.Directory, "payload.bin")); os.IsNotExist(err) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !os.IsNotExist(err) {
+		t.Fatal("delete-files did not remove owned content")
+	}
+	if _, err = os.Stat(filepath.Join(task.Directory, "payload.bin")); err != nil {
+		t.Fatal("delete-files affected retained earlier download")
 	}
 	if strings.Contains(task.Source, a.password) {
 		t.Fatal("credential leaked into task")

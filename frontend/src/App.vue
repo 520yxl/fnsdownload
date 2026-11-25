@@ -328,7 +328,7 @@ async function refresh(silent = false) {
 const duplicateDialog = ref<HTMLDialogElement | null>(null)
 const duplicateCount = ref(0)
 function canonicalURL(value: string) {
- try { const parsed = new URL(value); parsed.hash=''; return parsed.href } catch { return value.trim() }
+ try { const parsed = new URL(value); if(parsed.protocol==='magnet:'){const xt=parsed.searchParams.getAll('xt');for(const key of xt){const h=key.match(/^urn:btih:([a-f0-9]{40})$/i);if(h)return 'magnet:'+h[1].toLowerCase()};for(const key of xt){const h=key.match(/^urn:btmh:1220([a-f0-9]{64})$/i);if(h)return 'magnet:'+h[1].slice(0,40).toLowerCase()}} parsed.hash=''; return parsed.href } catch { return value.trim() }
 }
 async function addTask(duplicates: 'ask' | 'skip' | 'allow' = 'ask') {
   if (submitting.value || (!url.value.trim() && !torrentFile.value)) return

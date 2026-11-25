@@ -70,12 +70,15 @@ func (e *Engine) startProcess(c context.Context) (*managedProcess, error) {
 	if err = os.MkdirAll(configDir, 0700); err != nil {
 		return nil, err
 	}
-	config := fmt.Sprintf("[LegalNotice]\nAccepted=true\n[Preferences]\nWebUI\\Enabled=true\nWebUI\\Address=127.0.0.1\nWebUI\\Port=%d\nWebUI\\Username=moxyi\nWebUI\\Password_PBKDF2=\"@ByteArray(%s)\"\nWebUI\\LocalHostAuth=true\nWebUI\\AuthSubnetWhitelistEnabled=false\nWebUI\\CSRFProtection=true\nWebUI\\HostHeaderValidation=true\nWebUI\\ServerDomains=127.0.0.1\nWebUI\\SecureCookie=false\nWebUI\\UseUPnP=false\nConnection\\PortRangeMin=%d\nConnection\\UPnP=false\n[BitTorrent]\nSession\\StartPaused=true\nSession\\Port=%d\nSession\\UseUPnP=false\nSession\\LSDEnabled=false\nSession\\GlobalMaxRatio=0\nSession\\GlobalMaxSeedingMinutes=0\nSession\\ShareLimitAction=Stop\n", port, passwordHash(e.password, secret[32:]), peer, peer)
+	config := fmt.Sprintf("[LegalNotice]\nAccepted=true\n[Preferences]\nWebUI\\Enabled=true\nWebUI\\Address=127.0.0.1\nWebUI\\Port=%d\nWebUI\\Username=moxyi\nWebUI\\Password_PBKDF2=\"@ByteArray(%s)\"\nWebUI\\LocalHostAuth=true\nWebUI\\AuthSubnetWhitelistEnabled=false\nWebUI\\CSRFProtection=true\nWebUI\\HostHeaderValidation=true\nWebUI\\ServerDomains=127.0.0.1\nWebUI\\SecureCookie=false\nWebUI\\UseUPnP=false\nConnection\\PortRangeMin=%d\nConnection\\UPnP=false\n[Network]\nPortForwardingEnabled=false\n[BitTorrent]\nSession\\StartPaused=false\nSession\\Port=%d\nSession\\UseUPnP=false\nSession\\LSDEnabled=false\nSession\\GlobalMaxRatio=0\nSession\\GlobalMaxSeedingMinutes=0\nSession\\ShareLimitAction=Stop\n", port, passwordHash(e.password, secret[32:]), peer, peer)
 	path := filepath.Join(configDir, "qBittorrent.conf")
 	if err = os.WriteFile(path, []byte(config), 0600); err != nil {
 		return nil, err
 	}
 	if err = os.Chmod(path, 0600); err != nil {
+		return nil, err
+	}
+	if err = e.parkResumeData(); err != nil {
 		return nil, err
 	}
 	command := exec.Command(e.cfg.Binary, "--profile="+e.cfg.StateDir, "--webui-port="+fmt.Sprint(port), "--torrenting-port="+fmt.Sprint(peer), "--confirm-legal-notice")

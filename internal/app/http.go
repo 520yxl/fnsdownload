@@ -324,12 +324,12 @@ func (h *Handler) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(input.Torrent) > 0 {
-		hash, err := qbengine.TorrentHash(input.Torrent)
+		source, err := qbengine.TorrentMagnet(input.Torrent)
 		if err != nil {
 			writeError(w, 400, err.Error())
 			return
 		}
-		input.URL = "magnet:?xt=urn:btih:" + hash
+		input.URL = source
 	}
 	bt := strings.HasPrefix(strings.ToLower(strings.TrimSpace(input.URL)), "magnet:")
 	if bt {

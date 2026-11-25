@@ -132,6 +132,7 @@ else
   echo "PRODUCT_CREDENTIAL=external" >> "$DIST/build-info.txt"
 fi
 echo "ARIA2_BUILD=bundled-private-instance" >> "$DIST/build-info.txt"
+echo "QBITTORRENT_BUILD=bundled-private-instance" >> "$DIST/build-info.txt"
 chmod 755 "$WORK/app/server/fnsdownload-amd64"
 
 for lifecycle in main install_init install_callback upgrade_init upgrade_callback uninstall_init uninstall_callback config_init config_callback; do

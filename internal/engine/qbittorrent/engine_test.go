@@ -132,3 +132,85 @@ func TestPasswordHash(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestV2IdentityRetainsFullMagnet(t *testing.T) {
+	data := []byte("d4:infod12:meta versioni2e4:name1:aee")
+	hash, err := TorrentHash(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := TorrentMagnet(data)
+	if err != nil || !strings.Contains(source, "urn:btmh:1220") || len(strings.TrimPrefix(source, "magnet:?xt=urn:btmh:1220")) != 64 {
+		t.Fatal(source, err)
+	}
+	got, err := MagnetHash(source)
+	if err != nil || got != hash {
+		t.Fatal(got, err)
+	}
+}
+func TestExpiredCookieRenewsUsingActualName(t *testing.T) {
+	ctx := context.Background()
+	login := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/login") {
+			login++
+			_ = r.ParseForm()
+			if r.FormValue("password") != "private" {
+				t.Error("wrong login")
+			}
+			http.SetCookie(w, &http.Cookie{Name: "QBT_SID_random", Value: "session", Path: "/"})
+			fmt.Fprint(w, "Ok.")
+			return
+		}
+		if cookie, err := r.Cookie("QBT_SID_random"); err != nil || cookie.Value != "session" {
+			w.WriteHeader(403)
+			return
+		}
+		fmt.Fprint(w, "[]")
+	}))
+	defer server.Close()
+	e := NewManaged(Config{StateDir: t.TempDir()})
+	e.endpoint = server.URL
+	e.password = "private"
+	var rows []torrent
+	if err := e.form(ctx, "torrents/info", nil, &rows); err != nil {
+		t.Fatal(err)
+	}
+	if login != 1 {
+		t.Fatal("login retry not bounded", login)
+	}
+}
+
+func TestRestoredWildcardNeverReachesAPI(t *testing.T) {
+	e := NewManaged(Config{StateDir: t.TempDir()})
+	for _, id := range []string{"all", "qb-all", "qb-abc|def", "qb-" + strings.Repeat("a", 40) + "|all"} {
+		e.RestoreTask(engine.Task{ID: id, Engine: "qbittorrent"})
+		if e.Start(context.Background(), id) != engine.ErrNotFound || e.Delete(context.Background(), id, true) != engine.ErrNotFound {
+			t.Fatal("invalid hash reached API", id)
+		}
+	}
+}
+
+func TestParkResumeFlagsWithoutChangingPayload(t *testing.T) {
+	raw := []byte("d12:auto_managedi1e4:info3:abc6:pausedi0ee")
+	got, err := pauseResumeBytes(raw)
+	if err != nil || string(got) != "d12:auto_managedi0e4:info3:abc6:pausedi1ee" {
+		t.Fatal(string(got), err)
+	}
+	root := t.TempDir()
+	backup := filepath.Join(root, "qBittorrent", "data", "BT_backup")
+	_ = os.MkdirAll(backup, 0700)
+	path := filepath.Join(backup, strings.Repeat("ab", 20)+".fastresume")
+	_ = os.WriteFile(path, raw, 0600)
+	e := NewManaged(Config{StateDir: root})
+	if err = e.parkResumeData(); err != nil {
+		t.Fatal(err)
+	}
+	parked, _ := os.ReadFile(path)
+	if string(parked) != string(got) {
+		t.Fatal("resume flags not persisted")
+	}
+	if _, err = pauseResumeBytes([]byte("d6:pausedi0e6:pausedi1ee")); err == nil {
+		t.Fatal("ambiguous resume accepted")
+	}
+}
